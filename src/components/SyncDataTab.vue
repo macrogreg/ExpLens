@@ -46,6 +46,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { downloadTransactions } from "../business/downloadTransactions";
 
 const now = new Date();
 const twoYearsAgo = new Date(now.getTime() - 730 * 24 * 60 * 60 * 1000);
@@ -71,15 +72,37 @@ const toDateOrderRule = (val: string) => {
 
 const apiToken = ref("");
 const apiTokenError = ref(false);
-const fromDate = ref("");
-const toDate = ref("");
+
+// Helper to format local date as YYYY-MM-DD
+function formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+const today = new Date();
+let defaultFromDate: string;
+if (today.getDate() >= 1 && today.getDate() <= 19) {
+    // 1st of previous month
+    const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    defaultFromDate = formatLocalDate(prevMonth);
+} else {
+    // 1st of current month
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    defaultFromDate = formatLocalDate(firstOfMonth);
+}
+const defaultToDate = formatLocalDate(today);
+
+const fromDate = ref(defaultFromDate);
+const toDate = ref(defaultToDate);
 const fromDateError = ref("");
 const toDateError = ref("");
 
 const tokenRequiredRule = (val: string) =>
     (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
 
-function validateAndDownload() {
+async function validateAndDownload() {
     apiTokenError.value = !(apiToken.value && apiToken.value.trim().length > 0);
 
     // Date validation
@@ -109,6 +132,7 @@ function validateAndDownload() {
     if (apiTokenError.value || fromDateError.value || toDateError.value) {
         return;
     }
-    // Download handler to be implemented
+
+    await downloadTransactions(apiToken.value, fromDate.value, toDate.value);
 }
 </script>

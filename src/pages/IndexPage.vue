@@ -50,7 +50,23 @@
 </style>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+// Office.js will be available after Office.onReady
+onMounted(async () => {
+    if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
+        try {
+            const officeEnvInfo: {
+                host: Office.HostType;
+                platform: Office.PlatformType;
+            } = await Office.onReady();
+            console.log("Started as Office AddIn.", officeEnvInfo);
+        } catch (err) {
+            console.error("Failed initializing Office AddIn environment.", err);
+        }
+    } else {
+        console.error("Cannot initialize Office AddIn environment: `Office.onReady(..)` is not available.");
+    }
+});
 import SyncDataTab from "components/SyncDataTab.vue";
 import AdvancedTab from "components/AdvancedTab.vue";
 
