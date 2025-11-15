@@ -1,11 +1,9 @@
 <template>
     <q-page class="row justify-center">
-        <div class="col-8 q-pa-md" style="max-width: 800px">
-            <div class="row items-center no-wrap title-bar">
-                <h1 class="col">LunchMoney Sync</h1>
-                <div class="col-auto">
-                    <img src="/icons/favicon-32x32.png" alt="Logo" style="height: 32px; width: 32px" />
-                </div>
+        <div class="main-content q-pa-md">
+            <div class="title-bar">
+                <h1 class="title-text">LunchMoney Sync</h1>
+                <img src="/icons/favicon-32x32.png" alt="Logo" class="title-logo" />
             </div>
 
             <q-tabs v-model="tab" align="left" class="q-mb-md">
@@ -26,14 +24,28 @@
     background-color: rgb(31, 105, 194);
     padding: 2px 15px 2px 15px;
     color: white;
+    display: flex;
+    align-items: center;
 }
-h1 {
+.title-text {
     font-family: "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
     font-weight: 400;
     font-size: 32px;
     line-height: normal;
     margin: 0;
     padding: 5px 0 5px 0;
+    flex: 1;
+}
+.title-logo {
+    height: 32px;
+    width: 32px;
+    margin-left: 12px;
+}
+.main-content {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    box-sizing: border-box;
 }
 </style>
 
