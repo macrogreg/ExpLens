@@ -45,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { downloadTransactions } from "../business/downloadTransactions";
 
 const now = new Date();
@@ -71,6 +71,13 @@ const toDateOrderRule = (val: string) => {
 };
 
 const apiToken = ref("");
+// Load token from localStorage on mount
+onMounted(() => {
+    const storedToken = localStorage.getItem("lunchMoneyApiToken");
+    if (storedToken) {
+        apiToken.value = storedToken;
+    }
+});
 const apiTokenError = ref(false);
 
 // Helper to format local date as YYYY-MM-DD
@@ -133,6 +140,8 @@ async function validateAndDownload() {
         return;
     }
 
+    // Store token in localStorage before download
+    localStorage.setItem("lunchMoneyApiToken", apiToken.value);
     await downloadTransactions(apiToken.value, fromDate.value, toDate.value);
 }
 </script>
