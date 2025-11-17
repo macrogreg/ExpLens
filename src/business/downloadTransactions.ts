@@ -1,4 +1,8 @@
 /// <reference types="office-js" />
+
+import { isNotNullOrWhitespaceStr } from "src/util/string_util";
+import { useApiToken } from "./apiToken";
+
 // Business logic for LunchMoney Excel Add-In
 
 /**
@@ -8,9 +12,15 @@
  * @param toDate ISO string for TO date
  * @throws Error if Excel JS APIs are not available
  */
-export async function downloadTransactions(apiToken: string, fromDate: string, toDate: string): Promise<void> {
+export async function downloadTransactions(fromDate: string, toDate: string): Promise<void> {
     if (typeof Excel === "undefined" || typeof Excel.run !== "function") {
         throw new Error("Excel JS APIs are not available. This function must be run inside Excel.");
+    }
+
+    const apiToken = useApiToken().value();
+    if (!isNotNullOrWhitespaceStr(apiToken)) {
+        console.log("Will not try to download transactions, because no API Token is set.");
+        return;
     }
 
     await Excel.run(async (context: Excel.RequestContext) => {

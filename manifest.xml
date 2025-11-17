@@ -5,8 +5,7 @@
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
-
-    <Id>08f66dc6-47d7-48ee-aa73-4d99dade45b0</Id>
+    <Id>CC923F2C-0638-4F36-9E18-A4910CD71B74</Id>
     <Version>0.1.0.0</Version>
     <ProviderName>macrogreg</ProviderName>
     <DefaultLocale>en-US</DefaultLocale>

@@ -46,7 +46,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
-import { downloadTransactions } from "../business/downloadTransactions";
+//import { downloadTransactions } from "../business/downloadTransactions";
+import { useApiToken } from "src/business/apiToken";
+import { downloadTags } from "src/business/tags";
 
 const now = new Date();
 const twoYearsAgo = new Date(now.getTime() - 730 * 24 * 60 * 60 * 1000);
@@ -71,14 +73,11 @@ const toDateOrderRule = (val: string) => {
 };
 
 const apiToken = ref("");
-// Load token from localStorage on mount
-onMounted(() => {
-    const storedToken = localStorage.getItem("lunchMoneyApiToken");
-    if (storedToken) {
-        apiToken.value = storedToken;
-    }
-});
 const apiTokenError = ref(false);
+
+onMounted(() => {
+    apiToken.value = useApiToken().value() ?? "";
+});
 
 // Helper to format local date as YYYY-MM-DD
 function formatLocalDate(date: Date): string {
@@ -140,8 +139,16 @@ async function validateAndDownload() {
         return;
     }
 
-    // Store token in localStorage before download
-    localStorage.setItem("lunchMoneyApiToken", apiToken.value);
-    await downloadTransactions(apiToken.value, fromDate.value, toDate.value);
+    // Set API token
+
+    try {
+        useApiToken().set(apiToken.value);
+        await useApiToken().store();
+    } catch (err) {
+        console.error("Error setting or storing API token.", err);
+    }
+
+    //await downloadTransactions(fromDate.value, toDate.value);
+    await downloadTags();
 }
 </script>
