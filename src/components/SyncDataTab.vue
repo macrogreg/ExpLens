@@ -12,18 +12,25 @@
             <div v-else>Office Add-In environment not yet initialized.</div>
         </div>
 
-        <q-input
-            filled
-            label="LunchMoney API Token"
-            v-model="apiToken"
-            :error="apiTokenError"
-            :rules="[tokenRequiredRule]"
-            :dense="true"
-            :counter="false"
-            maxlength="200"
-            style="max-width: 450px; width: 100%; padding-right: 10px"
-        />
-        <!-- Error message handled by Quasar input rule -->
+        <div class="q-pa-sm" style="border: 1px lightgray solid; width: fit-content">
+            <q-input
+                ref="apiTokenTextfield"
+                filled
+                label="LunchMoney API Token"
+                v-model="apiToken"
+                :rules="[apiTokenRequiredRule]"
+                :dense="true"
+                :counter="false"
+                maxlength="200"
+                style="max-width: 450px; width: 100%; padding: 0 10px 20px 0"
+            />
+
+            <q-checkbox
+                v-model="hasPersistApiTokenPermissionControl"
+                label="Store the API Token in the current documents (Unsecure!)"
+                style="font-size: smaller"
+            />
+        </div>
 
         <div class="date-inputs" style="display: flex; gap: 16px">
             <div style="max-width: 220px; width: 100%">
@@ -52,15 +59,45 @@
 
         <q-btn label="Download" color="primary" @click="validateAndDownload" class="q-mt-md" />
     </div>
+
+    <q-dialog v-model="showPersistApiTokenDialog" persistent>
+        <q-card>
+            <q-card-section>
+                <div class="text-weight-bold q-mb-sm" style="font-size: larger">
+                    Really store the API Token as clear text in this document?
+                </div>
+                <p class="text-weight-bold">Anybody who can access this document can also access the token.</p>
+                <p class="text-justify q-mb-xs">
+                    The API Token enables complete access to all your data inside of Lunch Money.<br />
+                    We can store the API Token in the current document for your convenience. However, the Token is not
+                    encrypted, and anybody with access to this document can theoretically also access the Token.
+                </p>
+                <p class="text-justify q-mb-xs">
+                    If you ever suspect that an unauthorized person accessed your API Token, you must immediately delete it
+                    (you can create a new one right away). To do that, go to
+                    <span class="text-italic">Settings > Developers</span> in your Lunch Money app.<br />
+                    (<a target="_blank" href="https://my.lunchmoney.app/developers">https://my.lunchmoney.app/developers</a
+                    >).
+                </p>
+            </q-card-section>
+            <q-card-actions align="right">
+                <q-btn flat label="No" color="positive" v-close-popup @click="confirmPersistApiTokenDialog('no')" />
+                <q-btn flat label="Yes" color="negative" v-close-popup @click="confirmPersistApiTokenDialog('yes')" />
+            </q-card-actions>
+        </q-card>
+    </q-dialog>
 </template>
 
+<style scoped></style>
+
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 //import { downloadTransactions } from "../business/downloadTransactions";
 import { useApiToken } from "src/business/apiToken";
 import { downloadTags } from "src/business/tags";
 import { errorTypeMessageString } from "src/util/format_util";
 import { downloadCategories } from "src/business/categories";
+import { QInput } from "quasar";
 
 const officeApiInitErrorMsg = ref("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
@@ -87,8 +124,28 @@ const toDateOrderRule = (val: string) => {
     return to >= from || "TO date cannot be before FROM date.";
 };
 
+const apiTokenTextfield = ref<QInput | null>(null);
 const apiToken = ref("");
-const apiTokenError = ref(false);
+
+const showPersistApiTokenDialog = ref(false);
+const hasPersistApiTokenPermissionData = ref(false);
+const hasPersistApiTokenPermissionControl = computed({
+    get: () => hasPersistApiTokenPermissionData.value,
+    set: (val: boolean) => {
+        if (val) {
+            showPersistApiTokenDialog.value = true;
+        } else {
+            hasPersistApiTokenPermissionData.value = false;
+        }
+    },
+});
+
+function confirmPersistApiTokenDialog(choice: "yes" | "no") {
+    if (choice === "yes") {
+        hasPersistApiTokenPermissionData.value = true;
+    }
+    showPersistApiTokenDialog.value = false;
+}
 
 onMounted(async () => {
     console.debug("LunchMoney Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
@@ -139,6 +196,7 @@ onMounted(async () => {
     officeApiInitErrorMsg.value = "";
 
     apiToken.value = useApiToken().value() ?? "";
+    hasPersistApiTokenPermissionData.value = apiToken.value.length > 0;
 });
 
 // Helper to format local date as YYYY-MM-DD
@@ -167,11 +225,9 @@ const toDate = ref(defaultToDate);
 const fromDateError = ref("");
 const toDateError = ref("");
 
-const tokenRequiredRule = (val: string) => (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
+const apiTokenRequiredRule = (val: string) => (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
 
 async function validateAndDownload() {
-    apiTokenError.value = !(apiToken.value && apiToken.value.trim().length > 0);
-
     // Date validation
     fromDateError.value = "";
     toDateError.value = "";
@@ -196,7 +252,7 @@ async function validateAndDownload() {
     }
 
     // Highlight errors, do not proceed if any
-    if (apiTokenError.value || fromDateError.value || toDateError.value) {
+    if (!(await apiTokenTextfield.value?.validate()) || fromDateError.value || toDateError.value) {
         return;
     }
 
@@ -204,7 +260,13 @@ async function validateAndDownload() {
 
     try {
         useApiToken().set(apiToken.value);
-        await useApiToken().store();
+
+        if (hasPersistApiTokenPermissionControl.value) {
+            await useApiToken().store();
+        } else {
+            // If permission is not given, we clear the token, even if it was persisted with permission earlier:
+            await useApiToken().clearStorage();
+        }
     } catch (err) {
         console.error("Error setting or storing API token.", err);
     }

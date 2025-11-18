@@ -9,6 +9,19 @@ const TokenSettingName = `${AddInId}.v1ApiToken`;
 
 let apiToken: string | null = null;
 
+async function saveDocumentSettings() {
+    const completion = new PromiseCompletionSource<void>();
+    Office.context.document.settings.saveAsync((result: Office.AsyncResult<void>) => {
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+            completion.tryResolve();
+        } else {
+            completion.tryReject(result.error);
+        }
+    });
+
+    return completion.promise();
+}
+
 export function useApiToken() {
     return {
         value: () => {
@@ -29,23 +42,21 @@ export function useApiToken() {
 
         set: (token: string) => {
             apiToken = token;
+            Office.context.document.settings.set(TokenSettingName, apiToken);
         },
 
         isSet: () => isNotNullOrWhitespaceStr(apiToken),
 
         store: (): Promise<void> => {
+            console.debug("Storing the API Token in the document.");
             Office.context.document.settings.set(TokenSettingName, apiToken);
+            return saveDocumentSettings();
+        },
 
-            const completion = new PromiseCompletionSource<void>();
-            Office.context.document.settings.saveAsync((result: Office.AsyncResult<void>) => {
-                if (result.status === Office.AsyncResultStatus.Succeeded) {
-                    completion.tryResolve();
-                } else {
-                    completion.tryReject(result.error);
-                }
-            });
-
-            return completion.promise();
+        clearStorage: (): Promise<void> => {
+            console.debug("Clearing the API Token from the document.");
+            Office.context.document.settings.remove(TokenSettingName);
+            return saveDocumentSettings();
         },
     };
 }
