@@ -60,6 +60,7 @@ import { ref, onMounted } from "vue";
 import { useApiToken } from "src/business/apiToken";
 import { downloadTags } from "src/business/tags";
 import { errorTypeMessageString } from "src/util/format_util";
+import { downloadCategories } from "src/business/categories";
 
 const officeApiInitErrorMsg = ref("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
@@ -210,5 +211,6 @@ async function validateAndDownload() {
 
     //await downloadTransactions(fromDate.value, toDate.value);
     await downloadTags();
+    await downloadCategories();
 }
 </script>

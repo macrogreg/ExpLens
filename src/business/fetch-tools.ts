@@ -31,15 +31,11 @@ export async function badResponseToConsole(response: Response, purposeDescriptio
     );
 }
 
-export async function authorizedFetch(
-    method: string,
-    api: string,
-    purposeDescription: string
-): Promise<string | null> {
+export async function authorizedFetch(method: string, api: string, purposeDescription: string): Promise<string> {
     const apiToken = useApiToken().value();
+
     if (!isNotNullOrWhitespaceStr(apiToken)) {
-        console.log(`Cannot '${purposeDescription}', because no API Token is set.`);
-        return null;
+        throw new Error(`Cannot '${purposeDescription}', because no API Token is set.`);
     }
 
     const headers = new Headers();
@@ -55,13 +51,13 @@ export async function authorizedFetch(
 
         if (!response.ok) {
             await badResponseToConsole(response, purposeDescription);
-            return null;
-        } else {
-            const responseText = await response.text();
-            return responseText;
+            throw new Error(`Bad response (${response.status}) during '${purposeDescription}'.`);
         }
+
+        const responseText = await response.text();
+        return responseText;
     } catch (err) {
         console.error(`Fetch error during ${method} /${api} (${purposeDescription}).`, err);
-        return null;
+        throw err;
     }
 }

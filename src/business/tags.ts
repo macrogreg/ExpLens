@@ -7,8 +7,8 @@ import type { Tag } from "./lunchtime-types";
 import { strcmp } from "src/util/string_util";
 
 const SheetNameTags = "LM.Tags";
-const TableNameTags = "LunchMoney.TagsTable";
-const TableNameTagGroups = "LunchMoney.TagGroupsTable";
+const TableNameTags = "LM.TagsTable";
+const TableNameTagGroups = "LM.TagGroupsTable";
 
 const TagGroupSeperator = ":";
 const UngroupedTagMoniker = ":Ungrouped";
@@ -42,15 +42,6 @@ export function createTagGroupHeader(groupName: string | null) {
 }
 
 export async function downloadTags() {
-    // Fetch Tags:
-    const responseText = await authorizedFetch("GET", "tags", "get all tags");
-    if (!responseText) {
-        console.debug("Cannot proceed in 'downloadTags(..)', because 'authorizedFetch(..)' failed.");
-        return;
-    }
-
-    const tags: Tag[] = JSON.parse(responseText);
-
     await Excel.run(async (context: Excel.RequestContext) => {
         // Find and activate the Tags sheet:
         let tagsSheet = null;
@@ -68,13 +59,13 @@ export async function downloadTags() {
         tagsSheet.activate();
         await context.sync();
 
-        const errorMsgRange = tagsSheet.getRange("B4");
-        errorMsgRange.clear();
+        const errorMsgCell = tagsSheet.getRange("B4");
+        errorMsgCell.clear();
         await context.sync();
 
         // Headings:
         tagsSheet.getRange("B3").values = [["Tags"]];
-        tagsSheet.getRange("B3:D3").style = "Heading 1";
+        tagsSheet.getRange("B3:C3").style = "Heading 1";
 
         tagsSheet.getRange("B5").values = [["LunchMoney Tags"]];
         tagsSheet.getRange("B5:E5").style = "Heading 2";
@@ -85,6 +76,12 @@ export async function downloadTags() {
         await context.sync();
 
         try {
+            // Fetch Tags from the Cloud:
+            const responseText = await authorizedFetch("GET", "tags", "get all tags");
+
+            // Parse fetched Tags:
+            const tags: Tag[] = JSON.parse(responseText);
+
             // Is there an existing tags table?
             const existingTagsTable = await findTableByName(TableNameTags, context);
             const existingTagGroupsTable = await findTableByName(TableNameTagGroups, context);
@@ -93,14 +90,14 @@ export async function downloadTags() {
             if (existingTagsTable && existingTagsTable.sheet.id !== tagsSheet.id) {
                 throw new Error(
                     `Table '${TableNameTags}' exists on the wrong sheet: ${existingTagsTable.range.address}.` +
-                        `\nDon't edit this Tags-sheet. Don't name any objects using prefixes 'LunchMoney.' or 'LM.'`
+                        `\nDon't edit this Tags-sheet. Don't name any objects using prefix 'LM.'`
                 );
             }
 
             if (existingTagGroupsTable && existingTagGroupsTable.sheet.id !== tagsSheet.id) {
                 throw new Error(
                     `Table '${TableNameTagGroups}' exists on the wrong sheet: ${existingTagGroupsTable.range.address}.` +
-                        `\nDon't edit this Tags-sheet. Don't name any objects using prefixes 'LunchMoney.' or 'LM.'`
+                        `\nDon't edit this Tags-sheet. Don't name any objects using prefix 'LM.'`
                 );
             }
 
@@ -179,11 +176,12 @@ export async function downloadTags() {
             // Formula to count tags:
 
             const countTagsPreclearRange = tagsSheet.getRange("B7:K7");
-            countTagsPreclearRange.values = [["Count Tags:", ...Array(9).fill("")]];
+            countTagsPreclearRange.values = [["", "", "", "", "← counts →", "", "", "", "", ""]];
             countTagsPreclearRange.format.fill.clear();
             countTagsPreclearRange.format.font.color = "black";
 
-            const countTagsLabelRange = tagsSheet.getRange("B7");
+            const countTagsLabelRange = tagsSheet.getRange("F7");
+            countTagsLabelRange.format.horizontalAlignment = "Center";
             countTagsLabelRange.format.font.color = "#7e350e";
             countTagsLabelRange.format.font.bold = true;
 
@@ -283,9 +281,10 @@ export async function downloadTags() {
             }
         } catch (err) {
             console.error(err);
-            errorMsgRange.values = [[`Error: ${errorTypeMessageString(err)}`], [""]];
-            errorMsgRange.format.font.color = "#FF0000";
+            errorMsgCell.values = [[`Error: ${errorTypeMessageString(err)}`]];
+            errorMsgCell.format.font.color = "#FF0000";
             await context.sync();
+            throw err;
         }
     });
 }

@@ -82,8 +82,7 @@
                 <bt:Image id="Icon.80x80" DefaultValue="http://localhost:9000/icons/favicon-80x80.png"/>
             </bt:Images>
             <bt:Urls>
-                <bt:Url id="GetStarted-LearnMoreUrl" DefaultValue="https://ToDo"/>
-                <bt:Url id="Commands-Url" DefaultValue="http://localhost:9000/commands.html"/>
+                <bt:Url id="GetStarted-LearnMoreUrl" DefaultValue="https://ToDo"/>                
                 <bt:Url id="Taskpane-Url" DefaultValue="http://localhost:9000/index.html"/>
             </bt:Urls>
             <bt:ShortStrings>
