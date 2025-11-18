@@ -9,17 +9,23 @@ const TokenSettingName = `${AddInId}.v1ApiToken`;
 
 let apiToken: string | null = null;
 
-const loadedToken = Office.context.document.settings.get(TokenSettingName);
-if (isNotNullOrWhitespaceStr(loadedToken)) {
-    apiToken = loadedToken.toString();
-    console.log(`LunchMoney API Token loaded from the document (${apiToken.length} chars).`);
-} else {
-    console.log("LunchMoney API Token was NOT loaded from the document.");
-}
-
 export function useApiToken() {
     return {
-        value: () => apiToken,
+        value: () => {
+            if (apiToken !== null) {
+                return apiToken;
+            }
+
+            const loadedToken = Office.context.document.settings.get(TokenSettingName);
+            if (isNotNullOrWhitespaceStr(loadedToken)) {
+                apiToken = loadedToken.toString();
+                console.log(`LunchMoney API Token loaded from the document (${apiToken.length} chars).`);
+            } else {
+                console.log("LunchMoney API Token was NOT loaded from the document.");
+            }
+
+            return apiToken;
+        },
 
         set: (token: string) => {
             apiToken = token;

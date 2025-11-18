@@ -1,6 +1,16 @@
 <template>
     <div class="text-left q-gutter-md">
-        <h5 class="q-mt-none">Sync Data</h5>
+        <h5 class="q-ma-md">Sync Data</h5>
+
+        <div class="q-pa-sm" style="border: 1px lightgray solid; font-size: smaller">
+            <div v-if="officeApiInitErrorMsg" style="color: red">{{ officeApiInitErrorMsg }}</div>
+            <div v-else-if="officeApiEnvInfo">
+                Connected to MS Office. Host: '{{ officeApiEnvInfo.host ?? "null" }}'; Platform: '{{
+                    officeApiEnvInfo.platform ?? "null"
+                }}'.
+            </div>
+            <div v-else>Office Add-In environment not yet initialized.</div>
+        </div>
 
         <q-input
             filled
@@ -49,6 +59,10 @@ import { ref, onMounted } from "vue";
 //import { downloadTransactions } from "../business/downloadTransactions";
 import { useApiToken } from "src/business/apiToken";
 import { downloadTags } from "src/business/tags";
+import { errorTypeMessageString } from "src/util/format_util";
+
+const officeApiInitErrorMsg = ref("");
+const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
 
 const now = new Date();
 const twoYearsAgo = new Date(now.getTime() - 730 * 24 * 60 * 60 * 1000);
@@ -75,7 +89,54 @@ const toDateOrderRule = (val: string) => {
 const apiToken = ref("");
 const apiTokenError = ref(false);
 
-onMounted(() => {
+onMounted(async () => {
+    console.debug("LunchMoney Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
+
+    if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
+        try {
+            officeApiEnvInfo.value = await Office.onReady();
+        } catch (err) {
+            console.error(
+                "LunchMoney Excel-AddIn: Failed initializing Office AddIn environment." +
+                    " Are you viewing this within the Excel side panel?",
+                err
+            );
+            officeApiInitErrorMsg.value =
+                "Failed initializing Office AddIn environment." +
+                " Are you viewing this in an Excel Add-In Side Panel? You must!" +
+                " Diagnostic details: " +
+                errorTypeMessageString(err);
+            return;
+        }
+    } else {
+        console.error(
+            "LunchMoney Excel-AddIn: Cannot initialize Office APIs: `Office.onReady(..)` is not available." +
+                " Are you viewing this within the Excel side panel?"
+        );
+        officeApiInitErrorMsg.value =
+            "Cannot initialize Office APIs." +
+            " Are you viewing this in an Excel Add-In Side Panel? You must!" +
+            " Diagnostic details: " +
+            "`Office.onReady(..)` is not available.";
+        return;
+    }
+
+    if (officeApiEnvInfo.value.host === null && officeApiEnvInfo.value.platform === null) {
+        console.error(
+            "LunchMoney Excel-AddIn: Office AddIn initialization completed, but no suitable environment was detected." +
+                " Are you viewing this within the Excel side panel?"
+        );
+
+        officeApiInitErrorMsg.value =
+            "Office AddIn initialization completed, but no suitable environment was detected." +
+            " Are you viewing this in an Excel Add-In Side Panel? You must!";
+        officeApiEnvInfo.value = null;
+        return;
+    }
+
+    console.log("LunchMoney Excel-AddIn: Office API is ready.", officeApiEnvInfo.value);
+    officeApiInitErrorMsg.value = "";
+
     apiToken.value = useApiToken().value() ?? "";
 });
 
@@ -105,8 +166,7 @@ const toDate = ref(defaultToDate);
 const fromDateError = ref("");
 const toDateError = ref("");
 
-const tokenRequiredRule = (val: string) =>
-    (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
+const tokenRequiredRule = (val: string) => (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
 
 async function validateAndDownload() {
     apiTokenError.value = !(apiToken.value && apiToken.value.trim().length > 0);

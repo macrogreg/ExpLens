@@ -11,7 +11,7 @@
                 <q-tab name="advanced" label="Advanced" />
             </q-tabs>
 
-            <q-separator class="q-mb-md" />
+            <q-separator class="q-mb-lg" />
 
             <sync-data-tab v-if="tab === 'syncData'" />
             <advanced-tab v-if="tab === 'advanced'" />
@@ -51,22 +51,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+
+console.debug("LunchMoney Excel-AddIn: Loading IndexPage...");
+
 // Office.js will be available after Office.onReady
-onMounted(async () => {
-    if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
-        try {
-            const officeEnvInfo: {
-                host: Office.HostType;
-                platform: Office.PlatformType;
-            } = await Office.onReady();
-            console.log("Started as Office AddIn.", officeEnvInfo);
-        } catch (err) {
-            console.error("Failed initializing Office AddIn environment.", err);
-        }
-    } else {
-        console.error("Cannot initialize Office AddIn environment: `Office.onReady(..)` is not available.");
-    }
-});
+onMounted(async () => {});
 import SyncDataTab from "components/SyncDataTab.vue";
 import AdvancedTab from "components/AdvancedTab.vue";
 
