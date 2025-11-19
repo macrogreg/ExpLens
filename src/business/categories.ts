@@ -1,9 +1,9 @@
 /// <reference types="office-js" />
 
 import { errorTypeMessageString } from "src/util/format_util";
-import { ensureSheetActive, findTableByName } from "./excel-util";
+import { ensureSheetActive, findTableByName, timeStrToExcel } from "./excel-util";
 import { authorizedFetch } from "./fetch-tools";
-import type { Category } from "./lunchtime-types";
+import type { Category } from "./lunchmoney-types";
 
 const SheetNameCategories = "LM.Categories";
 const TableNameCategories = "LM.CategoriesTable";
@@ -51,22 +51,6 @@ function categoryToArray(cat: ExpenseCategory): (string | boolean | number)[] {
         arr.push((cat as any)[h]);
     }
     return arr;
-}
-
-function timeStrToExcel(datetimeStr: string): number {
-    const dt = new Date(datetimeStr);
-
-    if (isNaN(dt.getTime())) {
-        throw new Error(`Invalid date string '${datetimeStr}'.`);
-    }
-
-    // Excel epoch (1900 system): 1899-12-30
-    const excelEpoch = Math.abs(Date.UTC(1899, 11, 30));
-
-    const msecPerDay = 24 * 60 * 60 * 1000;
-
-    // Convert JS ms → Excel days
-    return (dt.getTime() + excelEpoch) / msecPerDay;
 }
 
 function extractLevelLabel(labelId: string, level: number): string {

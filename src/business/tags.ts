@@ -3,7 +3,7 @@
 import { errorTypeMessageString } from "src/util/format_util";
 import { findTableByName } from "./excel-util";
 import { authorizedFetch } from "./fetch-tools";
-import type { Tag } from "./lunchtime-types";
+import type { Tag } from "./lunchmoney-types";
 import { strcmp } from "src/util/string_util";
 
 const SheetNameTags = "LM.Tags";

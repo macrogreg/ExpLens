@@ -61,3 +61,19 @@ export async function ensureSheetActive(sheetName: string, excelContext: Excel.R
 
     return sheet;
 }
+
+export function timeStrToExcel(datetimeStr: string): number {
+    const dt = new Date(datetimeStr);
+
+    if (isNaN(dt.getTime())) {
+        throw new Error(`Invalid date string '${datetimeStr}'.`);
+    }
+
+    // Excel epoch (1900 system): 1899-12-30
+    const excelEpoch = Math.abs(Date.UTC(1899, 11, 30));
+
+    const msecPerDay = 24 * 60 * 60 * 1000;
+
+    // Convert JS ms → Excel days
+    return (dt.getTime() + excelEpoch) / msecPerDay;
+}
