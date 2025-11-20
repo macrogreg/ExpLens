@@ -40,7 +40,7 @@ async function initDocumentSettings() {
         } else {
             console.log("DocumentConfig not found. Will use defaults.");
             return {
-                appVersion: "0.1.0",
+                appVersion: "",
                 lastCompletedSync: "",
             };
         }
