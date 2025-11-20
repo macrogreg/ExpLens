@@ -54,7 +54,6 @@ import { ref, onMounted } from "vue";
 
 console.debug("LunchMoney Excel-AddIn: Loading IndexPage...");
 
-// Office.js will be available after Office.onReady
 onMounted(async () => {});
 import SyncDataTab from "components/SyncDataTab.vue";
 import AdvancedTab from "components/AdvancedTab.vue";

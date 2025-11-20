@@ -1,6 +1,6 @@
 import { errorTypeMessageString } from "src/util/format_util";
-import { useApiToken } from "./apiToken";
 import { isNotNullOrWhitespaceStr } from "src/util/string_util";
+import { useSettings } from "src/composables/settings";
 
 export async function badResponseToConsole(response: Response, purposeDescription: string | null) {
     let responseText: string;
@@ -32,7 +32,7 @@ export async function badResponseToConsole(response: Response, purposeDescriptio
 }
 
 export async function authorizedFetch(method: string, api: string, purposeDescription: string): Promise<string> {
-    const apiToken = useApiToken().value();
+    const apiToken = (await useSettings()).apiToken.value;
 
     if (!isNotNullOrWhitespaceStr(apiToken)) {
         throw new Error(`Cannot '${purposeDescription}', because no API Token is set.`);

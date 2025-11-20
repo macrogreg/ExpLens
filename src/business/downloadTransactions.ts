@@ -1,7 +1,7 @@
 /// <reference types="office-js" />
 
 import { isNotNullOrWhitespaceStr } from "src/util/string_util";
-import { useApiToken } from "./apiToken";
+import { useSettings } from "src/composables/settings";
 
 // Business logic for LunchMoney Excel Add-In
 
@@ -17,7 +17,7 @@ export async function downloadTransactions(fromDate: string, toDate: string): Pr
         throw new Error("Excel JS APIs are not available. This function must be run inside Excel.");
     }
 
-    const apiToken = useApiToken().value();
+    const apiToken = (await useSettings()).apiToken.value;
     if (!isNotNullOrWhitespaceStr(apiToken)) {
         console.log("Will not try to download transactions, because no API Token is set.");
         return;
@@ -90,9 +90,7 @@ export async function downloadTransactions(fromDate: string, toDate: string): Pr
                     const plaidKeys = Object.keys(plaidData);
                     if (!hasPlaidDataHeaders) {
                         const plaidKeyHeads = plaidKeys.map((k) => `plaid:${k}`);
-                        sheet.getRangeByIndexes(5, 2 + transKeys.length, 1, plaidKeys.length).values = [
-                            plaidKeyHeads,
-                        ];
+                        sheet.getRangeByIndexes(5, 2 + transKeys.length, 1, plaidKeys.length).values = [plaidKeyHeads];
                         hasPlaidDataHeaders = true;
                     }
 

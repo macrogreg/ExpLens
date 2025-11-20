@@ -91,13 +91,13 @@
 <style scoped></style>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 //import { downloadTransactions } from "../business/downloadTransactions";
-import { useApiToken } from "src/business/apiToken";
 import { downloadTags } from "src/business/tags";
-import { errorTypeMessageString } from "src/util/format_util";
 import { downloadCategories } from "src/business/categories";
 import { QInput } from "quasar";
+import { useOffice } from "src/composables/office-ready";
+import { useSettings } from "src/composables/settings";
 
 const officeApiInitErrorMsg = ref("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
@@ -150,53 +150,34 @@ function confirmPersistApiTokenDialog(choice: "yes" | "no") {
 onMounted(async () => {
     console.debug("LunchMoney Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
 
-    if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
-        try {
-            officeApiEnvInfo.value = await Office.onReady();
-        } catch (err) {
-            console.error(
-                "LunchMoney Excel-AddIn: Failed initializing Office AddIn environment." +
-                    " Are you viewing this within the Excel side panel?",
-                err
-            );
-            officeApiInitErrorMsg.value =
-                "Failed initializing Office AddIn environment." +
-                " Are you viewing this in an Excel Add-In Side Panel? You must!" +
-                " Diagnostic details: " +
-                errorTypeMessageString(err);
-            return;
+    try {
+        officeApiEnvInfo.value = await useOffice(true);
+    } catch (err) {
+        if (err instanceof Error) {
+            officeApiInitErrorMsg.value = err.message;
+        } else {
+            const errMsg = "Unexpected error while getting office APIs ready. AddIn will not work.";
+            console.error(errMsg, err);
+            officeApiInitErrorMsg.value = errMsg;
         }
-    } else {
-        console.error(
-            "LunchMoney Excel-AddIn: Cannot initialize Office APIs: `Office.onReady(..)` is not available." +
-                " Are you viewing this within the Excel side panel?"
-        );
-        officeApiInitErrorMsg.value =
-            "Cannot initialize Office APIs." +
-            " Are you viewing this in an Excel Add-In Side Panel? You must!" +
-            " Diagnostic details: " +
-            "`Office.onReady(..)` is not available.";
         return;
     }
 
-    if (officeApiEnvInfo.value.host === null && officeApiEnvInfo.value.platform === null) {
-        console.error(
-            "LunchMoney Excel-AddIn: Office AddIn initialization completed, but no suitable environment was detected." +
-                " Are you viewing this within the Excel side panel?"
-        );
-
-        officeApiInitErrorMsg.value =
-            "Office AddIn initialization completed, but no suitable environment was detected." +
-            " Are you viewing this in an Excel Add-In Side Panel? You must!";
-        officeApiEnvInfo.value = null;
-        return;
-    }
-
-    console.log("LunchMoney Excel-AddIn: Office API is ready.", officeApiEnvInfo.value);
     officeApiInitErrorMsg.value = "";
 
-    apiToken.value = useApiToken().value() ?? "";
+    const apiTokenSetting = (await useSettings()).apiToken;
+    apiToken.value = apiTokenSetting.value ?? "";
     hasPersistApiTokenPermissionData.value = apiToken.value.length > 0;
+
+    // UI → settings:
+    watch(apiToken, (newVal) => {
+        apiTokenSetting.value = newVal;
+    });
+
+    // settings → UI:
+    watch(apiTokenSetting, (newVal) => {
+        apiToken.value = newVal ?? "";
+    });
 });
 
 // Helper to format local date as YYYY-MM-DD
@@ -259,13 +240,11 @@ async function validateAndDownload() {
     // Set API token
 
     try {
-        useApiToken().set(apiToken.value);
-
         if (hasPersistApiTokenPermissionControl.value) {
-            await useApiToken().store();
+            await (await useSettings()).storeApiToken();
         } else {
             // If permission is not given, we clear the token, even if it was persisted with permission earlier:
-            await useApiToken().clearStorage();
+            await (await useSettings()).clearTokenStorage();
         }
     } catch (err) {
         console.error("Error setting or storing API token.", err);
