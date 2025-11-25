@@ -4,18 +4,43 @@ import { PromiseCompletionSource } from "src/util/PromiseCompletionSource";
 import { isNotNullOrWhitespaceStr, isNullOrWhitespace } from "src/util/string_util";
 import { useOffice } from "./office-ready";
 import { readonly, ref, watch } from "vue";
+import { type Ref } from "vue";
 
 // This should be the same as the manifest ID.
 const AddInId = "CC923F2C-0638-4F36-9E18-A4910CD71B74";
 const ConfigSettingName = `${AddInId}.config`;
 const TokenSettingName = `${AddInId}.v1ApiToken`;
 
-interface DocumentConfig {
-    appVersion: string;
-    lastCompletedSync: string;
+// Interface for the exported settings API:
+// (see `useSettings()`)
+export interface AppSettings {
+    appVersion: Readonly<Ref<string>>;
+    lastCompletedSyncUtc: Ref<Date | null>;
+    lastCompletedSyncVersion: Ref<number>;
+
+    apiToken: Ref<string | null, string | null>;
+
+    storeApiToken: () => Promise<void>;
+    clearAllStorage: () => Promise<void>;
+    clearTokenStorage: () => Promise<void>;
 }
 
-async function saveDocumentSettings() {
+// Interface for storing in the Office document:
+interface DocumentConfig {
+    appVersion: string;
+    lastCompletedSyncUtc: string;
+    lastCompletedSyncVersion: number;
+}
+
+// Do not await to ensure Office init does not delay module loading:
+const settings = initDocumentSettings();
+
+// let isSettingsResolved: boolean = false;
+// void settings.then(() => {
+//     isSettingsResolved = true;
+// });
+
+function saveDocumentSettings(): Promise<void> {
     const completion = new PromiseCompletionSource<void>();
     Office.context.document.settings.saveAsync((result: Office.AsyncResult<void>) => {
         if (result.status === Office.AsyncResultStatus.Succeeded) {
@@ -32,7 +57,7 @@ async function initDocumentSettings() {
     // Make sure Office APIs are available:
     await useOffice();
 
-    const config = (() => {
+    const config: DocumentConfig = (() => {
         const loadedVal = Office.context.document.settings.get(ConfigSettingName) as DocumentConfig;
         if (loadedVal) {
             console.log("DocumentConfig loaded: " + JSON.stringify(loadedVal, null, 4));
@@ -41,7 +66,8 @@ async function initDocumentSettings() {
             console.log("DocumentConfig not found. Will use defaults.");
             return {
                 appVersion: "",
-                lastCompletedSync: "",
+                lastCompletedSyncUtc: "",
+                lastCompletedSyncVersion: 0,
             };
         }
     })();
@@ -57,17 +83,18 @@ async function initDocumentSettings() {
         }
     })();
 
-    let lastCompletedSyncDate: Date | null = isNullOrWhitespace(config.lastCompletedSync)
+    let lastCompletedSyncUtcDate: Date | null = isNullOrWhitespace(config.lastCompletedSyncUtc)
         ? null
-        : new Date(config.lastCompletedSync);
-    if (lastCompletedSyncDate !== null && isNaN(lastCompletedSyncDate.getTime())) {
-        console.error(`lastCompletedSync (='${config.lastCompletedSync}') cannot be parsed into a valid date.`);
-        lastCompletedSyncDate = null;
+        : new Date(config.lastCompletedSyncUtc);
+    if (lastCompletedSyncUtcDate !== null && isNaN(lastCompletedSyncUtcDate.getTime())) {
+        console.error(`lastCompletedSyncUtc (='${config.lastCompletedSyncUtc}') cannot be parsed into a valid date.`);
+        lastCompletedSyncUtcDate = null;
     }
 
     const settingsRefs = {
         appVersion: ref<string>(config.appVersion),
-        lastCompletedSync: ref<Date | null>(lastCompletedSyncDate),
+        lastCompletedSyncUtc: ref<Date | null>(lastCompletedSyncUtcDate),
+        lastCompletedSyncVersion: ref<number>(config.lastCompletedSyncVersion),
         apiToken: ref<string | null>(apiToken),
     };
 
@@ -75,41 +102,56 @@ async function initDocumentSettings() {
         const allSettings = await settings;
         const config: DocumentConfig = {
             appVersion: newVal,
-            lastCompletedSync: allSettings.lastCompletedSync.value ? allSettings.lastCompletedSync.value.toISOString() : "",
+            lastCompletedSyncUtc: allSettings.lastCompletedSyncUtc.value
+                ? allSettings.lastCompletedSyncUtc.value.toISOString()
+                : "",
+            lastCompletedSyncVersion: allSettings.lastCompletedSyncVersion.value,
         };
         Office.context.document.settings.set(ConfigSettingName, config);
         await saveDocumentSettings();
     });
 
-    watch(settingsRefs.lastCompletedSync, async (newVal) => {
+    watch(settingsRefs.lastCompletedSyncUtc, async (newVal) => {
         const allSettings = await settings;
         const config: DocumentConfig = {
             appVersion: allSettings.appVersion.value,
-            lastCompletedSync: newVal === null ? "" : newVal.toISOString(),
+            lastCompletedSyncUtc: newVal === null ? "" : newVal.toISOString(),
+            lastCompletedSyncVersion: allSettings.lastCompletedSyncVersion.value,
         };
         Office.context.document.settings.set(ConfigSettingName, config);
         await saveDocumentSettings();
     });
 
-    // Do not watch and reactively store the API token. It required an explicit store invocation.
+    watch(settingsRefs.lastCompletedSyncVersion, async (newVal) => {
+        const allSettings = await settings;
+        const config: DocumentConfig = {
+            appVersion: allSettings.appVersion.value,
+            lastCompletedSyncUtc: allSettings.lastCompletedSyncUtc.value
+                ? allSettings.lastCompletedSyncUtc.value.toISOString()
+                : "",
+            lastCompletedSyncVersion: newVal,
+        };
+        Office.context.document.settings.set(ConfigSettingName, config);
+        await saveDocumentSettings();
+    });
+
+    // Do not watch and reactively store the API token. It requires an explicit store invocation.
 
     return settingsRefs;
 }
 
-// Do not await to ensure Office init does not delay module loading:
-const settings = initDocumentSettings();
-
-export async function useSettings() {
+export async function useSettings(): Promise<AppSettings> {
+    const allSettings = await settings;
     return {
-        appVersion: readonly((await settings).appVersion),
-        lastCompletedSync: (await settings).lastCompletedSync,
-        apiToken: (await settings).apiToken,
+        appVersion: readonly(allSettings.appVersion),
+        lastCompletedSyncUtc: allSettings.lastCompletedSyncUtc,
+        lastCompletedSyncVersion: allSettings.lastCompletedSyncVersion,
+        apiToken: allSettings.apiToken,
 
-        storeApiToken: async () => {
-            const allSettings = await settings;
+        storeApiToken: (): Promise<void> => {
             console.log("Storing API token in the document.");
             Office.context.document.settings.set(TokenSettingName, allSettings.apiToken.value);
-            await saveDocumentSettings();
+            return saveDocumentSettings();
         },
 
         clearAllStorage: (): Promise<void> => {

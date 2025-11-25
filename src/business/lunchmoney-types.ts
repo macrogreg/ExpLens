@@ -69,7 +69,7 @@ export interface Transaction {
     plaid_account_mask: string | null;
     institution_name: string | null;
     plaid_account_display_name: string | null;
-    plaid_metadata: PlaidMetadata | null;
+    plaid_metadata: string | null;
     plaid_category?: string | null; // in docs, but not actually returned
     source: string | null; // e.g. "plaid"
     display_name: string | null;

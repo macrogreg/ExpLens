@@ -5,9 +5,20 @@
         <div class="q-pa-sm" style="border: 1px lightgray solid; font-size: smaller">
             <div v-if="officeApiInitErrorMsg" style="color: red">{{ officeApiInitErrorMsg }}</div>
             <div v-else-if="officeApiEnvInfo">
-                Connected to MS Office. Host: '{{ officeApiEnvInfo.host ?? "null" }}'; Platform: '{{
-                    officeApiEnvInfo.platform ?? "null"
-                }}'.
+                <div>
+                    Connected to MS Office. Host: '{{ officeApiEnvInfo.host ?? "null" }}'; Platform: '{{
+                        officeApiEnvInfo.platform ?? "null"
+                    }}'.
+                </div>
+                <div v-if="appSettings">
+                    Last sync:
+                    {{
+                        appSettings.lastCompletedSyncUtc.value
+                            ? formatDateTimeLocalLong(appSettings.lastCompletedSyncUtc.value)
+                            : "never"
+                    }}
+                    (#{{ appSettings.lastCompletedSyncVersion.value }}).
+                </div>
             </div>
             <div v-else>Office Add-In environment not yet initialized.</div>
         </div>
@@ -37,23 +48,23 @@
                 <q-input
                     filled
                     label="FROM"
-                    v-model="fromDate"
+                    v-model="syncStartDate"
                     type="date"
-                    :error="!!fromDateError"
-                    :rules="[fromDateAgeRule]"
+                    :error="!!syncStartDateError"
+                    :rules="[syncStartDateAgeRule]"
                 />
-                <div v-if="fromDateError" class="text-negative q-mt-xs">{{ fromDateError }}</div>
+                <div v-if="syncStartDateError" class="text-negative q-mt-xs">{{ syncStartDateError }}</div>
             </div>
             <div style="max-width: 220px; width: 100%">
                 <q-input
                     filled
                     label="TO"
-                    v-model="toDate"
+                    v-model="syncEndDate"
                     type="date"
-                    :error="!!toDateError"
+                    :error="!!syncEndDateError"
                     :rules="[toDateOrderRule, toDateAgeRule]"
                 />
-                <div v-if="toDateError" class="text-negative q-mt-xs">{{ toDateError }}</div>
+                <div v-if="syncEndDateError" class="text-negative q-mt-xs">{{ syncEndDateError }}</div>
             </div>
         </div>
 
@@ -92,20 +103,23 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
-//import { downloadTransactions } from "../business/downloadTransactions";
+import { formatDateLocal, formatDateTimeLocalLong } from "src/util/format_util";
 import { downloadTags } from "src/business/tags";
 import { downloadCategories } from "src/business/categories";
 import { QInput } from "quasar";
 import { useOffice } from "src/composables/office-ready";
-import { useSettings } from "src/composables/settings";
+import { type AppSettings, useSettings } from "src/composables/settings";
+import { downloadTransactions } from "src/business/transactions";
 
 const officeApiInitErrorMsg = ref("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
 
+let appSettings: AppSettings;
+
 const now = new Date();
 const twoYearsAgo = new Date(now.getTime() - 730 * 24 * 60 * 60 * 1000);
 
-const fromDateAgeRule = (val: string) => {
+const syncStartDateAgeRule = (val: string) => {
     if (!val) return true;
     const from = new Date(val);
     return from >= twoYearsAgo || "FROM date must be within 2 years.";
@@ -118,8 +132,8 @@ const toDateAgeRule = (val: string) => {
 };
 
 const toDateOrderRule = (val: string) => {
-    if (!val || !fromDate.value) return true;
-    const from = new Date(fromDate.value);
+    if (!val || !syncStartDate.value) return true;
+    const from = new Date(syncStartDate.value);
     const to = new Date(val);
     return to >= from || "TO date cannot be before FROM date.";
 };
@@ -165,7 +179,9 @@ onMounted(async () => {
 
     officeApiInitErrorMsg.value = "";
 
-    const apiTokenSetting = (await useSettings()).apiToken;
+    appSettings = await useSettings();
+
+    const apiTokenSetting = appSettings.apiToken;
     apiToken.value = apiTokenSetting.value ?? "";
     hasPersistApiTokenPermissionData.value = apiToken.value.length > 0;
 
@@ -180,78 +196,78 @@ onMounted(async () => {
     });
 });
 
-// Helper to format local date as YYYY-MM-DD
-function formatLocalDate(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+function getDefaultSyncStartDate(today: Date) {
+    if (today.getDate() >= 1 && today.getDate() <= 19) {
+        // 1st of previous month
+        const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        return formatDateLocal(prevMonth);
+    } else {
+        // 1st of current month
+        const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        return formatDateLocal(firstOfMonth);
+    }
 }
 
-const today = new Date();
-let defaultFromDate: string;
-if (today.getDate() >= 1 && today.getDate() <= 19) {
-    // 1st of previous month
-    const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    defaultFromDate = formatLocalDate(prevMonth);
-} else {
-    // 1st of current month
-    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    defaultFromDate = formatLocalDate(firstOfMonth);
-}
-const defaultToDate = formatLocalDate(today);
-
-const fromDate = ref(defaultFromDate);
-const toDate = ref(defaultToDate);
-const fromDateError = ref("");
-const toDateError = ref("");
+const syncStartDate = ref(getDefaultSyncStartDate(now));
+const syncEndDate = ref(formatDateLocal(now));
+const syncStartDateError = ref("");
+const syncEndDateError = ref("");
 
 const apiTokenRequiredRule = (val: string) => (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
 
 async function validateAndDownload() {
     // Date validation
-    fromDateError.value = "";
-    toDateError.value = "";
+    syncStartDateError.value = "";
+    syncEndDateError.value = "";
 
-    const from = fromDate.value ? new Date(fromDate.value) : null;
-    const to = toDate.value ? new Date(toDate.value) : null;
+    const startDate = syncStartDate.value ? new Date(syncStartDate.value) : null;
+    const endDate = syncEndDate.value ? new Date(syncEndDate.value) : null;
 
-    if (!fromDate.value) {
-        fromDateError.value = "Please select a FROM date.";
-    } else if (from && from < twoYearsAgo) {
-        fromDateError.value = "FROM date must be within 2 years.";
+    if (!syncStartDate.value) {
+        syncStartDateError.value = "Please select a FROM date.";
+    } else if (startDate && startDate < twoYearsAgo) {
+        syncStartDateError.value = "FROM date must be within 2 years.";
     }
 
-    if (!toDate.value) {
-        toDateError.value = "Please select a TO date.";
-    } else if (to && to < twoYearsAgo) {
-        toDateError.value = "TO date must be within 2 years.";
+    if (!syncEndDate.value) {
+        syncEndDateError.value = "Please select a TO date.";
+    } else if (endDate && endDate < twoYearsAgo) {
+        syncEndDateError.value = "TO date must be within 2 years.";
     }
 
-    if (from && to && to < from) {
-        toDateError.value = "TO date cannot be before FROM date.";
+    if (startDate && endDate && endDate < startDate) {
+        syncEndDateError.value = "TO date cannot be before FROM date.";
     }
 
     // Highlight errors, do not proceed if any
-    if (!(await apiTokenTextfield.value?.validate()) || fromDateError.value || toDateError.value) {
+    if (!(await apiTokenTextfield.value?.validate()) || syncStartDateError.value || syncEndDateError.value) {
         return;
     }
+
+    if (startDate === null || endDate === null) {
+        return;
+    }
+
+    const loadedAppSettings = await useSettings();
 
     // Set API token
 
     try {
         if (hasPersistApiTokenPermissionControl.value) {
-            await (await useSettings()).storeApiToken();
+            await loadedAppSettings.storeApiToken();
         } else {
             // If permission is not given, we clear the token, even if it was persisted with permission earlier:
-            await (await useSettings()).clearTokenStorage();
+            await loadedAppSettings.clearTokenStorage();
         }
     } catch (err) {
         console.error("Error setting or storing API token.", err);
     }
 
-    //await downloadTransactions(fromDate.value, toDate.value);
     await downloadTags();
     await downloadCategories();
+    await downloadTransactions(startDate, endDate);
+
+    loadedAppSettings.lastCompletedSyncUtc.value = new Date();
+    loadedAppSettings.lastCompletedSyncVersion.value = loadedAppSettings.lastCompletedSyncVersion.value + 1;
 }
 </script>

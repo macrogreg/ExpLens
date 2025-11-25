@@ -2,6 +2,30 @@ import { containsAtLeastNRegex } from "./string_util.js";
 
 export const NewLineString = "\n" as const;
 
+export function formatDateUtc(datetime: Date): string {
+    if (datetime === null || datetime === undefined || !(datetime instanceof Date)) {
+        throw new Error("formatDateUtc(..) expects datetime to be a valid instance of Date.");
+    }
+
+    const yyyy = pad(4, datetime.getUTCFullYear());
+    const mm = pad(2, datetime.getUTCMonth() + 1);
+    const dd = pad(2, datetime.getUTCDate());
+
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+export function formatDateLocal(datetime: Date): string {
+    if (datetime === null || datetime === undefined || !(datetime instanceof Date)) {
+        throw new Error("formatDateLocal(..) expects datetime to be a valid instance of Date.");
+    }
+
+    const yyyy = pad(4, datetime.getFullYear());
+    const mm = pad(2, datetime.getMonth() + 1);
+    const dd = pad(2, datetime.getDate());
+
+    return `${yyyy}-${mm}-${dd}`;
+}
+
 export function formatDateTimeLocalLong(datetime: Date): string {
     if (datetime === null || datetime === undefined || !(datetime instanceof Date)) {
         throw new Error("formatDateTimeLocalLong(..) expects datetime to be a valid instance of Date.");
@@ -86,12 +110,7 @@ function formatValueSimpleUnsafe(value: unknown) {
         return `"${value}"`;
     }
 
-    if (
-        typeof value === "number" ||
-        typeof value === "boolean" ||
-        typeof value === "bigint" ||
-        typeof value === "symbol"
-    ) {
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" || typeof value === "symbol") {
         return String(value);
     }
 
@@ -182,12 +201,7 @@ function formatValueAny(value: unknown, indentLevel: number, options: Required<F
         return `"${value}"`;
     }
 
-    if (
-        typeof value === "number" ||
-        typeof value === "boolean" ||
-        typeof value === "bigint" ||
-        typeof value === "symbol"
-    ) {
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" || typeof value === "symbol") {
         return String(value);
     }
 
@@ -215,11 +229,7 @@ function formatValueAny(value: unknown, indentLevel: number, options: Required<F
     return formatValueObject(value, indentLevel, options);
 }
 
-function formatValueArray(
-    value: Array<unknown>,
-    indentLevel: number,
-    options: Required<FormatValueOptions>
-): string {
+function formatValueArray(value: Array<unknown>, indentLevel: number, options: Required<FormatValueOptions>): string {
     if (!Array.isArray(value)) {
         throw new Error(`This API only formats arrays, but value is '${formatValueSimple(value)}'.`);
     }
@@ -316,11 +326,7 @@ function formatValueSet(value: Set<unknown>, indentLevel: number, options: Requi
     return arrayStr;
 }
 
-function formatValueMap(
-    value: Map<unknown, unknown>,
-    indentLevel: number,
-    options: Required<FormatValueOptions>
-): string {
+function formatValueMap(value: Map<unknown, unknown>, indentLevel: number, options: Required<FormatValueOptions>): string {
     if (value === null) {
         throw new Error(`This API only formats Map instances, but value is 'null'.`);
     }
@@ -389,9 +395,7 @@ function formatValueObject(value: object, indentLevel: number, options: Required
     // Otherwise reformat it to use a single line:
     const hasTwoOrMoreProps = containsAtLeastNRegex(valueStr, indentPattern, 2);
 
-    const indentValStr = hasTwoOrMoreProps
-        ? valueStr.replace(/(\r\n|\r|\n)/g, `$1${baseIndentStr}`)
-        : JSON.stringify(value);
+    const indentValStr = hasTwoOrMoreProps ? valueStr.replace(/(\r\n|\r|\n)/g, `$1${baseIndentStr}`) : JSON.stringify(value);
 
     return indentValStr;
 }
