@@ -176,16 +176,17 @@ export async function downloadTags(context: SyncContext) {
         await context.excel.sync();
 
         // Process fetched tags and populate table:
-        context.assignableTags.clear();
-        context.knownTagsById.clear();
+        context.tags.assignable.clear();
+        context.tags.groupListFormulaLocations.clear();
+        context.tags.byId.clear();
 
         const sortedParsedTags = parsedTags.sort((t1, t2) => strcmp(t1.name, t2.name));
         for (let t = 0; t < sortedParsedTags.length; t++) {
             const parsedTag = sortedParsedTags[t]!;
             const tagInfo = parseTag(parsedTag.name);
 
-            addTagValue(context.assignableTags, tagInfo);
-            context.knownTagsById.set(parsedTag.id, tagInfo);
+            addTagValue(context.tags.assignable, tagInfo);
+            context.tags.byId.set(parsedTag.id, tagInfo);
 
             const rowToAdd = [
                 parsedTag.id,
@@ -224,7 +225,7 @@ export async function downloadTags(context: SyncContext) {
 
         // Print Tag Groups table area header:
         getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, -3, 0, 1, 1).values = [["Tag Groups"]];
-        getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, -3, 0, 1, context.assignableTags.size).style =
+        getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, -3, 0, 1, context.tags.assignable.size).style =
             "Heading 2";
         await context.excel.sync();
 
@@ -241,7 +242,7 @@ export async function downloadTags(context: SyncContext) {
         }
 
         // Print data about the Tag Groups:
-        const tagGroupNames = getTagGroups(context.assignableTags);
+        const tagGroupNames = getTagGroups(context.tags.assignable);
 
         for (let g = 0; g < tagGroupNames.length; g++) {
             const groupName = tagGroupNames[g]!;
@@ -251,7 +252,7 @@ export async function downloadTags(context: SyncContext) {
             const groupGapRange = getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 2, g, 1, 1);
             const groupListRange = getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 3, g, 1, 1);
 
-            const grCnt = getTagValues(context.assignableTags, groupName).length;
+            const grCnt = getTagValues(context.tags.assignable, groupName).length;
             const groupListBackRange = getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 3, g, grCnt, 1);
 
             groupNameRange.load(["address"]);
@@ -260,8 +261,11 @@ export async function downloadTags(context: SyncContext) {
             await context.excel.sync();
 
             const groupNameRangeAddr = parseOnSheetAddress(groupNameRange.address);
-            const groupListRangeAddr = parseOnSheetAddress(groupListRange.address);
-            //console.debug(`Tag Group #${g}: NameRange @ '${groupNameRangeAddr}'; ListRange @ '${groupListRangeAddr}'`);
+            context.tags.groupListFormulaLocations.set(groupName, groupListRange.address);
+            console.debug(
+                `Tag Group #${g}: groupNameRangeAddr='${groupNameRangeAddr}';` +
+                    ` groupListRange.address='${groupListRange.address}'.`
+            );
 
             groupNameRange.formulas = [[""]];
             groupNameRange.values = [[groupName]];
@@ -289,7 +293,7 @@ export async function downloadTags(context: SyncContext) {
             ];
 
             groupCountRange.values = [[""]];
-            groupCountRange.formulas = [[`= COUNTA(${groupListRangeAddr}#)`]];
+            groupCountRange.formulas = [[`= COUNTA(${groupListRange.address}#)`]];
 
             groupNameRange.format.autofitColumns();
             groupListRange.format.autofitColumns();

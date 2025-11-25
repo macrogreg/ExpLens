@@ -16,8 +16,11 @@ export type SyncContext = {
         cats: Excel.Worksheet;
         trans: Excel.Worksheet;
     };
-    assignableTags: TagValuesCollection;
-    knownTagsById: Map<number, TagInfo>;
+    tags: {
+        assignable: TagValuesCollection;
+        groupListFormulaLocations: Map<string, string>;
+        byId: Map<number, TagInfo>;
+    };
 };
 
 export async function downloadData(
@@ -55,8 +58,11 @@ export async function downloadData(
                 tags: tagsSheet,
                 cats: catsSheets,
             },
-            assignableTags: new Map<string, Set<string>>(),
-            knownTagsById: new Map<number, TagInfo>(),
+            tags: {
+                assignable: new Map<string, Set<string>>(),
+                groupListFormulaLocations: new Map<string, string>(),
+                byId: new Map<number, TagInfo>(),
+            },
         };
 
         await downloadTags(syncCtx);
