@@ -84,10 +84,11 @@
                     encrypted, and anybody with access to this document can theoretically also access the Token.
                 </p>
                 <p class="text-justify q-mb-xs">
-                    If you ever suspect that an unauthorized person accessed your API Token, you must immediately delete it
-                    (you can create a new one right away). To do that, go to
+                    If you ever suspect that an unauthorized person accessed your API Token, you must immediately delete
+                    it (you can create a new one right away). To do that, go to
                     <span class="text-italic">Settings > Developers</span> in your Lunch Money app.<br />
-                    (<a target="_blank" href="https://my.lunchmoney.app/developers">https://my.lunchmoney.app/developers</a
+                    (<a target="_blank" href="https://my.lunchmoney.app/developers"
+                        >https://my.lunchmoney.app/developers</a
                     >).
                 </p>
             </q-card-section>
@@ -104,12 +105,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { formatDateLocal, formatDateTimeLocalLong } from "src/util/format_util";
-import { downloadTags } from "src/business/tags";
-import { downloadCategories } from "src/business/categories";
 import { QInput } from "quasar";
 import { useOffice } from "src/composables/office-ready";
 import { type AppSettings, useSettings } from "src/composables/settings";
-import { downloadTransactions } from "src/business/transactions";
+import { downloadData } from "src/business/sync-driver";
 
 const officeApiInitErrorMsg = ref("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
@@ -213,7 +212,8 @@ const syncEndDate = ref(formatDateLocal(now));
 const syncStartDateError = ref("");
 const syncEndDateError = ref("");
 
-const apiTokenRequiredRule = (val: string) => (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
+const apiTokenRequiredRule = (val: string) =>
+    (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
 
 async function validateAndDownload() {
     // Date validation
@@ -263,11 +263,6 @@ async function validateAndDownload() {
         console.error("Error setting or storing API token.", err);
     }
 
-    await downloadTags();
-    await downloadCategories();
-    await downloadTransactions(startDate, endDate);
-
-    loadedAppSettings.lastCompletedSyncUtc.value = new Date();
-    loadedAppSettings.lastCompletedSyncVersion.value = loadedAppSettings.lastCompletedSyncVersion.value + 1;
+    await downloadData(startDate, endDate, true);
 }
 </script>

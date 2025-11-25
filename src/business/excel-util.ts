@@ -46,7 +46,41 @@ export async function findTableByName(
     return { table, sheet, range };
 }
 
-export async function ensureSheetActive(sheetName: string, excelContext: Excel.RequestContext): Promise<Excel.Worksheet> {
+/** Finds a table by name. If the table does not exist at all, the returned promise resolves to null.
+ * However, if the table exists, but NOT on the specified sheet, the an error is thrown. */
+export async function findTableByNameOnSheet(
+    tableName: string,
+    expectedSheet: Excel.Worksheet,
+    excelContext: Excel.RequestContext
+): Promise<{ table: Excel.Table; sheet: Excel.Worksheet; range: Excel.Range } | null> {
+    // Load target sheet id:
+    expectedSheet.load(["id"]);
+    await excelContext.sync();
+    const expectedSheetId = expectedSheet.id;
+
+    // No table => return null:
+    const existingTableInfo = await findTableByName(tableName, excelContext);
+    if (existingTableInfo === null) {
+        return null;
+    }
+
+    // There is an existing tags table, but it is not on this sheet:
+    if (existingTableInfo.sheet.id !== expectedSheetId) {
+        throw new Error(
+            `Table '${tableName}' exists on the wrong sheet ('${existingTableInfo.range.address}').` +
+                "\n NOTE: Don't name any objects using prefix 'LM.';" +
+                " Don't edit any auto-created sheets, except where specified." +
+                "\n SOLUTION: Back-up your data, delete or rename the unexpected table, reload the Add-In."
+        );
+    }
+
+    return existingTableInfo;
+}
+
+export async function ensureSheetActive(
+    sheetName: string,
+    excelContext: Excel.RequestContext
+): Promise<Excel.Worksheet> {
     let sheet = excelContext.workbook.worksheets.getItemOrNullObject(sheetName);
     sheet.load("name, id, isNullObject");
     await excelContext.sync();
@@ -57,6 +91,7 @@ export async function ensureSheetActive(sheetName: string, excelContext: Excel.R
     }
 
     sheet.activate();
+    sheet.load("name, id, isNullObject");
     await excelContext.sync();
 
     return sheet;
@@ -76,4 +111,25 @@ export function timeStrToExcel(datetimeStr: string): number {
 
     // Convert JS ms → Excel days
     return (dt.getTime() + excelEpoch) / msecPerDay;
+}
+
+export function getRangeBasedOn(
+    sheet: Excel.Worksheet,
+    base: { row: number; col: number },
+    startRowOffsFromBase: number,
+    startColumnOffsFromBase: number,
+    rowCount: number,
+    columnCount: number
+): Excel.Range {
+    return sheet.getRangeByIndexes(
+        base.row + startRowOffsFromBase,
+        base.col + startColumnOffsFromBase,
+        rowCount,
+        columnCount
+    );
+}
+
+export function parseOnSheetAddress(address: string): string {
+    const sepPos = address.indexOf("!");
+    return sepPos < 0 ? address.trim() : address.substring(sepPos + 1).trim();
 }

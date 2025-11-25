@@ -1,43 +1,64 @@
 /// <reference types="office-js" />
 
 import { errorTypeMessageString } from "src/util/format_util";
-import { findTableByName } from "./excel-util";
+import { findTableByNameOnSheet, getRangeBasedOn, parseOnSheetAddress } from "./excel-util";
 import { authorizedFetch } from "./fetch-tools";
 import type { Tag } from "./lunchmoney-types";
 import { strcmp } from "src/util/string_util";
+import type { SyncContext } from "./sync-driver";
 
-const SheetNameTags = "LM.Tags";
+export const SheetNameTags = "LM.Tags";
 const TableNameTags = "LM.TagsTable";
 const TableNameTagGroups = "LM.TagGroupsTable";
 
 export const TagGroupSeparator = ":";
 export const UngroupedTagMoniker = ":Ungrouped";
 
-//
-// ToDo: This file needs some refactoring!
-//
+export type TagValuesCollection = Map<string, Set<string>>;
 
-// export function getTagGroup(tag: string): string | null {
-//     const i = tag.indexOf(TagGroupSeparator);
-//     return i === -1 ? null : tag.substring(0, i);
-// }
+export function getTagGroups(tagCollection: TagValuesCollection): string[] {
+    return [...tagCollection.keys()].sort();
+}
 
-export function parseTag(tag: string): {
+export function getTagValues(tagCollection: TagValuesCollection, tagGroupName: string): string[] {
+    const groupTagsSet = tagCollection.get(tagGroupName);
+    const groupTagsList = groupTagsSet === undefined ? [] : [...groupTagsSet].sort();
+    return groupTagsList;
+}
+
+export function addTagValue(tagCollection: TagValuesCollection, tag: TagInfo): TagValuesCollection {
+    let groupTagsSet = tagCollection.get(tag.group);
+
+    if (groupTagsSet === undefined) {
+        groupTagsSet = new Set<string>();
+        tagCollection.set(tag.group, groupTagsSet);
+    }
+
+    groupTagsSet.add(tag.value);
+    return tagCollection;
+}
+
+export type TagInfo = {
     group: string;
     value: string;
     isGrp: boolean;
-} {
-    const sepPos = tag.indexOf(TagGroupSeparator);
+    name: string;
+};
+
+export function parseTag(tagName: string): TagInfo {
+    const sepPos = tagName.indexOf(TagGroupSeparator);
     return sepPos < 0
         ? {
               group: UngroupedTagMoniker,
-              value: tag,
+              value: tagName,
               isGrp: false,
+              name: tagName.trim(),
           }
         : {
-              group: tag.substring(0, sepPos),
-              value: tag.substring(sepPos + 1),
+              group: tagName.substring(0, sepPos),
+              value: tagName.substring(sepPos + 1),
               isGrp: true,
+              name: tagName.trim(),
           };
 }
 
@@ -45,252 +66,250 @@ export function createTagGroupHeader(groupName: string | null) {
     return `Tag:${groupName ?? UngroupedTagMoniker}`;
 }
 
-export function downloadTags(): Promise<void> {
-    return Excel.run(_downloadTags);
-}
-
-async function _downloadTags(context: Excel.RequestContext) {
-    // Find and activate the Tags sheet:
-    let tagsSheet = null;
-    try {
-        tagsSheet = context.workbook.worksheets.getItem(SheetNameTags);
-        tagsSheet.load("name, id");
-        await context.sync();
-    } catch {
-        // Sheet does not exist, create it
-        tagsSheet = context.workbook.worksheets.add(SheetNameTags);
-        await context.sync();
-    }
-
+export async function downloadTags(context: SyncContext) {
     // Activate the sheet:
-    tagsSheet.activate();
-    await context.sync();
+    context.sheets.tags.activate();
+    await context.excel.sync();
 
-    const errorMsgCell = tagsSheet.getRange("B4");
+    // Clear area for the error messages:
+    const errorMsgCell = context.sheets.tags.getRange("B4");
     errorMsgCell.clear();
-    await context.sync();
-
-    // Headings:
-    tagsSheet.getRange("B3").values = [["Tags"]];
-    tagsSheet.getRange("B3:C3").style = "Heading 1";
-
-    tagsSheet.getRange("B5").values = [["LunchMoney Tags"]];
-    tagsSheet.getRange("B5:E5").style = "Heading 2";
-
-    tagsSheet.getRange("G5").values = [["Tag Groups"]];
-    tagsSheet.getRange("G5:I5").style = "Heading 2";
-
-    await context.sync();
+    await context.excel.sync();
 
     try {
+        // Tags table spec:
+        const tagsTableOffs = { row: 7, col: 1 };
+        const tagsTableHead_Grp = "Structured:Group";
+        const tagsTableHead_Val = "Structured:Value";
+        const tagsTableHeaderNames = ["id", "name", "description", "archived", tagsTableHead_Grp, tagsTableHead_Val];
+
+        // Sheet header:
+        context.sheets.tags.getRange("B3").values = [["Tags"]];
+        context.sheets.tags.getRange("B3:C3").style = "Heading 1";
+        await context.excel.sync();
+
         // Fetch Tags from the Cloud:
-        const responseText = await authorizedFetch("GET", "tags", "get all tags");
+        const fetchedResponseText = await authorizedFetch("GET", "tags", "get all tags");
 
         // Parse fetched Tags:
-        const tags: Tag[] = JSON.parse(responseText);
+        const parsedTags: Tag[] = JSON.parse(fetchedResponseText);
 
-        // Is there an existing tags table?
-        const existingTagsTable = await findTableByName(TableNameTags, context);
-        const existingTagGroupsTable = await findTableByName(TableNameTagGroups, context);
+        // Preliminary table area header (final version after autofit, so that the header does not stretch its column):
+        getRangeBasedOn(context.sheets.tags, tagsTableOffs, -3, 0, 1, 1).values = [["Tags"]];
+        getRangeBasedOn(context.sheets.tags, tagsTableOffs, -3, 0, 1, tagsTableHeaderNames.length).style = "Heading 2";
+        await context.excel.sync();
 
-        // There is an existing tags table, but it is not on this sheet:
-        if (existingTagsTable && existingTagsTable.sheet.id !== tagsSheet.id) {
-            throw new Error(
-                `Table '${TableNameTags}' exists on the wrong sheet: ${existingTagsTable.range.address}.` +
-                    `\nDon't edit this Tags-sheet. Don't name any objects using prefix 'LM.'`
-            );
-        }
+        // Is there an existing tags table? (this will throw if table is not on the Tags sheet)
+        const existingTagsTableInfo = await findTableByNameOnSheet(TableNameTags, context.sheets.tags, context.excel);
 
-        if (existingTagGroupsTable && existingTagGroupsTable.sheet.id !== tagsSheet.id) {
-            throw new Error(
-                `Table '${TableNameTagGroups}' exists on the wrong sheet: ${existingTagGroupsTable.range.address}.` +
-                    `\nDon't edit this Tags-sheet. Don't name any objects using prefix 'LM.'`
-            );
-        }
-
-        // Select or create the table:
-        const tagsTable = existingTagsTable
-            ? await (async () => {
-                  console.log(`Tags table '${TableNameTags}' found at '${existingTagsTable.range.address}'.`);
-
-                  existingTagsTable.table.columns.load("count");
-                  existingTagsTable.table.rows.load("count");
-                  await context.sync();
-                  if (existingTagsTable.table.columns.count !== 4) {
-                      throw new Error(
-                          `Table '${TableNameTags}' must have 4 columns,` +
-                              ` but it actually has ${existingTagsTable.table.columns.count}.`
+        // Make sure the table exists:
+        const tagsTable =
+            existingTagsTableInfo !== null
+                ? existingTagsTableInfo.table
+                : await (async () => {
+                      const tbl = context.sheets.tags.tables.add(
+                          getRangeBasedOn(context.sheets.tags, tagsTableOffs, 0, 0, 2, 1),
+                          true
                       );
-                  }
-                  return existingTagsTable.table;
-              })()
-            : await (async () => {
-                  const tbl = tagsSheet.tables.add("B8:E9", true);
-                  tbl.name = TableNameTags;
-                  tbl.style = "TableStyleMedium10"; // e.g."TableStyleMedium2", "TableStyleDark1", "TableStyleLight9" ...
-                  tbl.columns.load("count");
-                  tbl.rows.load("count");
-                  await context.sync();
-                  console.log(`New Tags table '${TableNameTags}' created.`);
-                  return tbl;
-              })();
+                      tbl.name = TableNameTags;
+                      tbl.style = "TableStyleMedium10"; // e.g."TableStyleMedium2", "TableStyleDark1", "TableStyleLight9" ...
+                      await context.excel.sync();
+                      console.debug(`New Tags table '${TableNameTags}' created.`);
+                      return tbl;
+                  })();
 
-        // Set header names:
-        const headerNames = ["id", "name", "description", "archived"];
-        const tagsTableHeaderRange = tagsTable.getHeaderRowRange();
-        tagsTableHeaderRange.values = [headerNames];
+        tagsTable.columns.load("count");
+        tagsTable.rows.load("count");
+        await context.excel.sync();
 
-        // Delete existing rows only if there are any
-        console.log(`Tags table had ${tagsTable.rows.count} rows before the refresh.`);
-        if (tagsTable.rows.count > 0) {
+        // Make sure the table has the right columns:
+        while (tagsTable.columns.count < tagsTableHeaderNames.length) {
+            tagsTable.columns.add();
+            tagsTable.columns.load("count");
+            await context.excel.sync();
+        }
+        while (tagsTable.columns.count > tagsTableHeaderNames.length) {
+            tagsTable.columns.getItemAt(0).delete();
+            tagsTable.columns.load("count");
+            await context.excel.sync();
+        }
+
+        tagsTable.getHeaderRowRange().values = [tagsTableHeaderNames];
+        tagsTable.columns.load("count");
+        await context.excel.sync();
+
+        // Clear all rows:
+        if (tagsTable.rows.count > 1) {
             tagsTable.rows.deleteRowsAt(0, tagsTable.rows.count - 1);
-            tagsTable.getDataBodyRange().values = [["", "", "", ""]];
         }
 
-        await context.sync();
+        // Top row cannot be deleted (tables must not have zero data rows), so fill with "":
+        tagsTable.getDataBodyRange().values = [Array(tagsTableHeaderNames.length).fill("")];
 
-        // Output tags:
-        if (tags.length > 0) {
-            const rowsToAdd = tags
-                .sort((t1, t2) => strcmp(t1.name, t2.name))
-                .map((t) => [t.id, t.name, t.description, t.archived]);
+        tagsTable.rows.load("count");
+        await context.excel.sync();
 
-            tagsTable.rows.add(0, rowsToAdd);
-            await context.sync();
-            tagsTable.rows.load("count");
-            console.log(`Tags table has ${tagsTable.rows.count} rows after the refresh.`);
+        {
+            const tagsTableRange = tagsTable.getRange();
+            tagsTableRange.load("address");
+            await context.excel.sync();
+            console.debug(
+                `Tags table "${TableNameTags}" is located at "${tagsTableRange.address}",` +
+                    ` it has ${tagsTable.columns.count} columns and ${tagsTable.rows.count} row(s).`
+            );
         }
 
-        console.log(`Tags table had ${tagsTable.rows.count} rows before the refresh.`);
-
-        // Check if the last row of the tagsTable is empty and delete it if so
-        const tagsTableBodyRange = tagsTable.getDataBodyRange();
-        tagsTableBodyRange.load(["rowCount", "values"]);
-        await context.sync();
-
-        if (tagsTableBodyRange.rowCount > 0) {
-            const lastRowIndex = tagsTableBodyRange.rowCount - 1;
-            const lastRowValues = tagsTableBodyRange.values && tagsTableBodyRange.values[lastRowIndex];
-
-            if (Array.isArray(lastRowValues)) {
-                if (!lastRowValues[0]) {
-                    tagsTable.rows.deleteRowsAt(lastRowIndex, 1);
-                    await context.sync();
-                }
-            }
-        }
-
-        // Formula to count tags:
-
-        const countTagsPreclearRange = tagsSheet.getRange("B7:K7");
-        countTagsPreclearRange.values = [["", "", "", "", "← counts →", "", "", "", "", ""]];
-        countTagsPreclearRange.format.fill.clear();
-        countTagsPreclearRange.format.font.color = "black";
-
-        const countTagsLabelRange = tagsSheet.getRange("F7");
-        countTagsLabelRange.format.horizontalAlignment = "Center";
+        // Add tag count field:
+        const countTagsLabelRange = getRangeBasedOn(context.sheets.tags, tagsTableOffs, -1, 0, 1, 1);
+        countTagsLabelRange.format.fill.clear();
         countTagsLabelRange.format.font.color = "#7e350e";
         countTagsLabelRange.format.font.bold = true;
+        countTagsLabelRange.format.horizontalAlignment = "Right";
+        countTagsLabelRange.values = [["Count:"]];
 
-        const tagNameCountRange = tagsSheet.getRange("C7");
-        tagNameCountRange.format.horizontalAlignment = "Left";
-        tagNameCountRange.format.fill.color = "#f2f2f2";
-        tagNameCountRange.format.font.color = "#7e350e";
-        tagNameCountRange.format.font.bold = true;
-        tagNameCountRange.formulas = [[`="  " & COUNTA(${TableNameTags}[name])`]];
-        await context.sync();
+        const countTagsFormulaRange = getRangeBasedOn(context.sheets.tags, tagsTableOffs, -1, 1, 1, 1);
+        countTagsFormulaRange.format.fill.color = "#f2f2f2";
+        countTagsFormulaRange.format.font.color = "#7e350e";
+        countTagsFormulaRange.format.font.bold = true;
+        countTagsFormulaRange.format.horizontalAlignment = "Left";
+        countTagsFormulaRange.formulas = [[`="  " & COUNTA(${TableNameTags}[name])`]];
+        await context.excel.sync();
 
-        // Compute tag groups:
-        const tagGroups: Record<string, Set<string>> = {};
-        for (const tag of tags) {
-            const parsedTag = parseTag(tag.name);
-            if (!(parsedTag.group in tagGroups)) {
-                tagGroups[parsedTag.group] = new Set<string>();
+        // Process fetched tags and populate table:
+        context.assignableTags.clear();
+        context.knownTagsById.clear();
+
+        const sortedParsedTags = parsedTags.sort((t1, t2) => strcmp(t1.name, t2.name));
+        for (let t = 0; t < sortedParsedTags.length; t++) {
+            const parsedTag = sortedParsedTags[t]!;
+            const tagInfo = parseTag(parsedTag.name);
+
+            addTagValue(context.assignableTags, tagInfo);
+            context.knownTagsById.set(parsedTag.id, tagInfo);
+
+            const rowToAdd = [
+                parsedTag.id,
+                parsedTag.name,
+                parsedTag.description,
+                parsedTag.archived,
+                tagInfo.group,
+                tagInfo.value,
+            ];
+
+            if (t === 0) {
+                tagsTable.rows.getItemAt(0).getRange().values = [rowToAdd];
+            } else {
+                tagsTable.rows.add(-1, [rowToAdd]);
             }
-            tagGroups[parsedTag.group]!.add(parsedTag.value);
+
+            tagsTable.rows.load("count");
+            await context.excel.sync();
         }
 
-        // Select or create the table:
-        const tagGroupsTable = existingTagGroupsTable
-            ? await (async () => {
-                  console.log(
-                      `Tag groups table '${TableNameTagGroups}' found at '${existingTagGroupsTable.range.address}'.`
-                  );
+        tagsTable.getRange().format.autofitColumns();
+        await context.excel.sync();
 
-                  existingTagGroupsTable.table.columns.load("count");
-                  existingTagGroupsTable.table.rows.load("count");
-                  await context.sync();
+        // Reprint table area header after the autofit, so that the header does not stretch its column:
+        getRangeBasedOn(context.sheets.tags, tagsTableOffs, -3, 0, 1, 1).values = [["LunchMoney Tags"]];
+        await context.excel.sync();
 
-                  return existingTagGroupsTable.table;
-              })()
-            : await (async () => {
-                  const tbl = tagsSheet.tables.add("G8:G9", true);
-                  tbl.name = TableNameTagGroups;
-                  tbl.style = "TableStyleMedium10";
-                  tbl.columns.load("count");
-                  tbl.rows.load("count");
-                  await context.sync();
-                  console.log(`New Tags table '${TableNameTagGroups}' created.`);
-                  return tbl;
-              })();
+        console.log(`Tags table has ${tagsTable.rows.count} rows after the refresh.`);
 
-        console.log(
-            `Tag Groups table had ${tagGroupsTable.columns.count} columns and ${tagGroupsTable.rows.count} rows before the refresh.`
+        // Now, we build the Tag Groups Table.
+
+        const tagGroupsTableOffs = {
+            row: tagsTableOffs.row,
+            col: tagsTableOffs.col + tagsTableHeaderNames.length + 1,
+        };
+
+        // Print Tag Groups table area header:
+        getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, -3, 0, 1, 1).values = [["Tag Groups"]];
+        getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, -3, 0, 1, context.assignableTags.size).style =
+            "Heading 2";
+        await context.excel.sync();
+
+        // Find and delete Tag Groups table:
+        const existingTagGroupsTable = await findTableByNameOnSheet(
+            TableNameTagGroups,
+            context.sheets.tags,
+            context.excel
         );
 
-        if (tagGroupsTable.rows.count > 0) {
-            tagGroupsTable.rows.deleteRowsAt(0, tagGroupsTable.rows.count - 1);
-            await context.sync();
-        }
-        while (tagGroupsTable.columns.count > 1) {
-            tagGroupsTable.columns.getItemAt(0).delete();
-            tagGroupsTable.columns.load("count");
-            await context.sync();
+        if (existingTagGroupsTable !== null) {
+            existingTagGroupsTable.table.delete();
+            await context.excel.sync();
         }
 
-        // Output a row starting at G7 with the sorted keys of tagGroups
-        const groupHeads = Object.keys(tagGroups).sort();
+        // Print data about the Tag Groups:
+        const tagGroupNames = getTagGroups(context.assignableTags);
 
-        if (groupHeads.length > 0) {
-            // Headers:
-            tagsSheet.getRangeByIndexes(7, 6, 1, groupHeads.length).values = [groupHeads];
-            await context.sync();
+        for (let g = 0; g < tagGroupNames.length; g++) {
+            const groupName = tagGroupNames[g]!;
 
-            // Output each group's values as a column under its key
-            let maxGrTags = 0;
-            groupHeads.forEach((gHd, i) => {
-                const gTags = Array.from(tagGroups[gHd] ?? []).sort();
-                if (gTags.length > 0) {
-                    maxGrTags = Math.max(maxGrTags, gTags.length);
-                    tagsSheet.getRangeByIndexes(8, 6 + i, gTags.length, 1).values = gTags.map((v) => [v]);
-                }
-            });
+            const groupNameRange = getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 0, g, 1, 1);
+            const groupCountRange = getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 1, g, 1, 1);
+            const groupGapRange = getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 2, g, 1, 1);
+            const groupListRange = getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 3, g, 1, 1);
 
-            tagGroupsTable.rows.load("count");
-            console.log(
-                `Tag Groups table had ${tagGroupsTable.columns.count} columns and ${tagGroupsTable.rows.count} rows before the refresh.`
-            );
+            const grCnt = getTagValues(context.assignableTags, groupName).length;
+            const groupListBackRange = getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 3, g, grCnt, 1);
 
-            // Counts:
-            const tagGroupCountRange = tagsSheet.getRangeByIndexes(6, 6, 1, groupHeads.length);
-            tagGroupCountRange.format.horizontalAlignment = "Left";
-            tagGroupCountRange.format.fill.color = "#f2f2f2";
-            tagGroupCountRange.format.font.color = "#7e350e";
-            tagGroupCountRange.format.font.bold = true;
+            groupNameRange.load(["address"]);
+            groupCountRange.load(["address"]);
+            groupListRange.load(["address"]);
+            await context.excel.sync();
 
-            const tagGroupCountRangeInsideBorder = tagGroupCountRange.format.borders.getItem("InsideVertical");
-            tagGroupCountRangeInsideBorder.color = "white";
-            tagGroupCountRangeInsideBorder.style = "Continuous";
-            tagGroupCountRangeInsideBorder.weight = "Thin";
+            const groupNameRangeAddr = parseOnSheetAddress(groupNameRange.address);
+            const groupListRangeAddr = parseOnSheetAddress(groupListRange.address);
+            //console.debug(`Tag Group #${g}: NameRange @ '${groupNameRangeAddr}'; ListRange @ '${groupListRangeAddr}'`);
 
-            tagGroupCountRange.formulas = [groupHeads.map((grH) => `="  " & COUNTA(${TableNameTagGroups}[${grH}])`)];
-            await context.sync();
+            groupNameRange.formulas = [[""]];
+            groupNameRange.values = [[groupName]];
+
+            groupGapRange.values = [[""]];
+            groupGapRange.formulas = [[""]];
+            groupGapRange.format.fill.clear();
+
+            groupListBackRange.values = Array(grCnt).fill([""]);
+            groupListBackRange.formulas = Array(grCnt).fill([""]);
+            groupListBackRange.format.fill.color = "#f2f2f2";
+            groupListBackRange.format.font.color = "#7e350e";
+            groupListBackRange.format.font.bold = false;
+            groupListBackRange.format.horizontalAlignment = "Left";
+            const groupListBackRangeLeftBorder = groupListBackRange.format.borders.getItem("EdgeLeft");
+            groupListBackRangeLeftBorder.color = "white";
+            groupListBackRangeLeftBorder.style = "Continuous";
+            groupListBackRangeLeftBorder.weight = "Medium";
+
+            groupListRange.values = [[""]];
+            groupListRange.formulas = [
+                [
+                    `= FILTER(${TableNameTags}[${tagsTableHead_Val}], ${TableNameTags}[${tagsTableHead_Grp}]=${groupNameRangeAddr})`,
+                ],
+            ];
+
+            groupCountRange.values = [[""]];
+            groupCountRange.formulas = [[`= COUNTA(${groupListRangeAddr}#)`]];
+
+            groupNameRange.format.autofitColumns();
+            groupListRange.format.autofitColumns();
+            await context.excel.sync();
         }
+
+        // Frame the printed Tag Group Item Count data with a table:
+        const tagGroupsTable = context.sheets.tags.tables.add(
+            getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 0, 0, 2, tagGroupNames.length),
+            true
+        );
+        tagGroupsTable.name = TableNameTagGroups;
+        tagGroupsTable.style = "TableStyleMedium10"; // e.g."TableStyleMedium2", "TableStyleDark1", "TableStyleLight9" ...
+        await context.excel.sync();
+        console.debug(`New Tags Groups table '${TableNameTagGroups}' created.`);
     } catch (err) {
         console.error(err);
         errorMsgCell.values = [[`ERR: ${errorTypeMessageString(err)}`]];
         errorMsgCell.format.font.color = "#FF0000";
-        await context.sync();
+        await context.excel.sync();
         throw err;
     }
 }

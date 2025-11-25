@@ -17,12 +17,8 @@ import { authorizedFetch } from "./fetch-tools";
 import type * as Lunch from "./lunchmoney-types";
 import { IndexedMap } from "./IndexedMap";
 
-const SheetNameTransactions = "LM.Transactions";
+export const SheetNameTransactions = "LM.Transactions";
 const TableNameTransactions = "LM.TransactionsTable";
-
-export function downloadTransactions(startDate: Date, endDate: Date): Promise<void> {
-    return Excel.run((ctx) => _downloadTransactions(startDate, endDate, ctx));
-}
 
 function isColumnNamingEquivalent(expectedColumnsNames: string[], actualColumnNames: string[]) {
     let expC = 0,
@@ -105,7 +101,7 @@ async function createNewTranTable(context: Excel.RequestContext, sheet: Excel.Wo
     return table;
 }
 
-async function _downloadTransactions(startDate: Date, endDate: Date, context: Excel.RequestContext) {
+export async function downloadTransactions(startDate: Date, endDate: Date, context: Excel.RequestContext) {
     // Find and activate the Transactions sheet:
     const tranSheet = await ensureSheetActive(SheetNameTransactions, context);
 

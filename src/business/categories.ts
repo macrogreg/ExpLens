@@ -5,7 +5,7 @@ import { ensureSheetActive, findTableByName, timeStrToExcel } from "./excel-util
 import { authorizedFetch } from "./fetch-tools";
 import type { Category } from "./lunchmoney-types";
 
-const SheetNameCategories = "LM.Categories";
+export const SheetNameCategories = "LM.Categories";
 const TableNameCategories = "LM.CategoriesTable";
 
 export interface ExpenseCategory {
@@ -68,11 +68,7 @@ function extractLevelLabel(labelId: string, level: number): string {
     return labelId;
 }
 
-export function downloadCategories(): Promise<void> {
-    return Excel.run(_downloadCategories);
-}
-
-async function _downloadCategories(context: Excel.RequestContext) {
+export async function downloadCategories(context: Excel.RequestContext) {
     // Find and activate the Categories sheet:
     const categSheet = await ensureSheetActive(SheetNameCategories, context);
 

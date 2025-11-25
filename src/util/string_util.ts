@@ -55,7 +55,19 @@ export function containsAtLeastN(haystack: string, needle: string, n: number): b
 }
 
 // eslint-disable-next-line @typescript-eslint/no-wrapper-object-types
-export function isNullOrWhitespace(s: unknown): s is null | undefined | string | String {
+export function isNullOrWhitespace(s: null | undefined | string | String): boolean {
+    if (s === null) return true;
+    if (s === undefined) return true;
+    if (typeof s === "string" || s instanceof String) {
+        if (s.length === 0) return true;
+        return s.trim().length === 0;
+    }
+    // If `s` was not of the specified type, we gracefully return false
+    return false;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-wrapper-object-types
+export function isNullOrWhitespaceStr(s: unknown): s is null | undefined | string | String {
     if (s === null) return true;
     if (s === undefined) return true;
     if (typeof s === "string" || s instanceof String) {
