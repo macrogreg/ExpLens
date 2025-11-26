@@ -13,8 +13,8 @@ export interface Transaction {
     id: number;
 }
 
-export const TagColumnsPlaceholder = "<Tag Groups Columns>";
-const TagGroupColumnNamePrefix = `Tags${TagGroupSeparator}`;
+const TagColumnsPlaceholder = "<Tag Groups Columns>";
+const TagGroupColumnNamePrefix = `Tag${TagGroupSeparator}`;
 
 export const LunchIdColumnName = "LunchId";
 
@@ -27,28 +27,32 @@ export interface TransactionColumnSpec {
 }
 
 const transactionColumnsSpecs: TransactionColumnSpec[] = [
-    transColumn(LunchIdColumnName, (t) => t.trn.id),
-
     transColumn("date", (t) => timeStrToExcel(t.trn.date), "yyyy-mm-dd"),
-    transColumn("Account", (t) => JJ(t.trn.account_display_name, t.pld?.account_owner)),
+
+    transColumn("Account", (t) => t.trn.account_display_name),
+    transColumn("Payer", (t) => t.pld?.account_owner),
+
     transColumn("payee", (t) => t.trn.payee),
-    transColumn("amount", (t) => t.trn.to_base, AccountingWithMinusFormatStr),
+    transColumn("Amount", (t) => t.trn.to_base, AccountingWithMinusFormatStr),
 
     transColumn("Category", (t) => JJ(t.trn.category_group_name, t.trn.category_name)),
 
+    transColumn(TagColumnsPlaceholder, (_) => null),
+
     transColumn("Plaid:MerchantCategory", (t) => J(t.pld?.category)),
     transColumn("Plaid:TransactionCategory", (t) => {
-        const p = t.pld?.personal_finance_category?.primary?.trim() ?? "";
-        const d = t.pld?.personal_finance_category?.detailed?.trim() ?? "";
+        const p = t.pld?.personal_finance_category?.primary?.replaceAll("_", " ").trim() ?? "";
+        const d = t.pld?.personal_finance_category?.detailed?.replaceAll("_", " ").trim() ?? "";
 
-        let s = d.startsWith(p) ? d.slice(p.length) : d;
-        while (s.startsWith("_")) {
-            s = s.slice(1);
-        }
-        return JJ(p, s);
+        const s = d.startsWith(p) ? d.slice(p.length).trim() : d;
+
+        const regEx = /\b(\w)(\w*)/g;
+        const lowerTail = (_: unknown, first: string, tail: string) => first + tail.toLowerCase();
+        const pl = p.replace(regEx, lowerTail);
+        const sl = s.replace(regEx, lowerTail);
+
+        return JJ(pl, sl);
     }),
-
-    transColumn(TagColumnsPlaceholder, (_) => null),
 
     transColumn("status", (t) => t.trn.status),
 
@@ -92,11 +96,15 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
 
     transColumn("group_id", (t) => t.trn.group_id),
 
+    transColumn("_amount", (t) => t.trn.amount),
+    transColumn("AccountWithOwner", (t) => JJ(t.trn.account_display_name, t.pld?.account_owner)),
+
     transColumn("asset_id", (t) => t.trn.asset_id),
     transColumn("asset_institution_name", (t) => t.trn.asset_institution_name),
     transColumn("asset_name", (t) => t.trn.asset_name),
     transColumn("asset_display_name", (t) => t.trn.asset_display_name),
     transColumn("asset_status", (t) => t.trn.asset_status),
+
     transColumn("plaid_account_id", (t) => t.trn.plaid_account_id),
     transColumn("plaid_account_name", (t) => t.trn.plaid_account_name),
     transColumn("plaid_account_mask", (t) => t.trn.plaid_account_mask),
@@ -173,6 +181,7 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("plaid:transaction_type", (t) => t.pld?.transaction_type),
     transColumn("plaid:unofficial_currency_code", (t) => t.pld?.unofficial_currency_code),
     transColumn("plaid:website", (t) => t.pld?.website),
+    transColumn(LunchIdColumnName, (t) => t.trn.id),
 ];
 
 type ValueExtractor = (trans: Transaction) => string | boolean | number | null | undefined;
@@ -208,13 +217,27 @@ export function createTransactionColumnsSpecs(context: SyncContext): IndexedMap<
     return specs;
 }
 
+export function getTagColumnsPosition() {
+    let p = transactionColumnsSpecs.findIndex((cs) => cs.name === TagColumnsPlaceholder);
+    if (p < 0) {
+        p = transactionColumnsSpecs.findIndex((cs) => cs.name.toUpperCase() === "CATEGORY");
+    }
+    if (p < 0) {
+        p = transactionColumnsSpecs.findIndex((cs) => cs.name.toUpperCase() === "PAYEE");
+    }
+    if (p < 0) {
+        p = 0;
+    }
+    return p;
+}
+
 function getTransactionTagsByGroup(tran: Transaction, tagGroupName: string) {
     const groupTagsList = getTagValues(tran.tag, tagGroupName);
     const tagsStr = J(groupTagsList, TagListSeparator) as string;
     return tagsStr;
 }
 
-function formatTagGroupColumnHeader(groupName: string) {
+export function formatTagGroupColumnHeader(groupName: string) {
     return `${TagGroupColumnNamePrefix}${groupName}`.trim();
 }
 

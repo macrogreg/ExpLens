@@ -8,6 +8,8 @@ import {
     LunchIdColumnName,
     createTransactionColumnsSpecs,
     tryGetTagGroupFromColumnName,
+    getTagColumnsPosition,
+    formatTagGroupColumnHeader,
 } from "./transaction-tools";
 import { isNullOrWhitespace } from "src/util/string_util";
 import { parseTag } from "./tags";
@@ -67,6 +69,46 @@ function isColumnNamingEquivalent(
     }
 }
 
+// If the sync context specified columns that were not already present in the table, insert them:
+async function insertMissingTagColumns(tranTable: Excel.Table, context: SyncContext) {
+    tranTable.columns.load(["count", "items"]);
+    tranTable.rows.load(["count"]);
+    await context.excel.sync();
+
+    // Set of all required tag columns:
+    const reqTagColNames = context.tags.assignable.keys().map((gn) => formatTagGroupColumnHeader(gn));
+    const missingColNames = new Set(reqTagColNames);
+
+    // Scroll through table, remove all encountered tag columns from search set:
+    let firstTagColNum: number | undefined = undefined;
+    for (let c = 0; c < tranTable.columns.count; c++) {
+        const col = tranTable.columns.getItemAt(c).load(["name"]);
+        await context.excel.sync();
+
+        // If no more outstanding column names, be done:
+        missingColNames.delete(col.name);
+        if (missingColNames.size === 0) {
+            return;
+        }
+
+        if (tryGetTagGroupFromColumnName(col.name)) {
+            firstTagColNum = firstTagColNum === undefined ? c : firstTagColNum;
+        }
+    }
+
+    if (firstTagColNum === undefined) {
+        firstTagColNum = getTagColumnsPosition();
+    }
+
+    //Add required columns:
+    const colNamesToAdd = [...missingColNames].sort().reverse();
+    for (const cn of colNamesToAdd) {
+        tranTable.columns.add(firstTagColNum, undefined, cn);
+    }
+
+    await context.excel.sync();
+}
+
 async function createNewTranTable(
     tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
     sheet: Excel.Worksheet,
@@ -115,6 +157,10 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
     try {
         const tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec> = createTransactionColumnsSpecs(context);
 
+        // Make first (empty) column slim:
+        context.sheets.trans.getRange("A:A").format.columnWidth = 10;
+        await context.excel.sync();
+
         // Is there an existing Transactions table?
         const prevTranTableInfo = await findTableByNameOnSheet(
             TableNameTransactions,
@@ -128,30 +174,30 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 ? await createNewTranTable(tranColumnsSpecs, tranSheet, context.excel)
                 : prevTranTableInfo.table;
 
-        // Get the expected column names:
-        if (!tranColumnsSpecs.has(LunchIdColumnName)) {
-            const preexistenceQualifier = prevTranTableInfo === null ? "newly created" : "pre-existing";
-            throw new Error(
-                `The table '${tranTable.name}' (${preexistenceQualifier}) does not contain` +
-                    ` the expected column '${LunchIdColumnName}'.`
-            );
-        }
+        // If the sync context specified columns that were not already present in the table, insert them:
+        await insertMissingTagColumns(tranTable, context);
 
         // Load the column names actually present in the table:
-        tranTable.columns.load("items");
+        tranTable.columns.load(["count", "items"]);
         await context.excel.sync();
         for (const col of tranTable.columns.items) {
             col.load("name");
         }
         await context.excel.sync();
 
-        // Validate that the actual column names match the spec:
-        if (
-            !isColumnNamingEquivalent(
-                tranColumnsSpecs,
-                tranTable.columns.items.map((col) => col.name.trim())
-            )
-        ) {
+        // Cache the actually present Transactions table Column Names:
+        const tranTableColNames: string[] = tranTable.columns.items.map((col) => col.name.trim());
+
+        // Ensure the ID column exists:
+        if (!tranTableColNames.includes(LunchIdColumnName)) {
+            throw new Error(
+                `Table '${tranTable.name}' (${prevTranTableInfo === null ? "newly created" : "pre-existing"})` +
+                    ` does not contain the expected column '${LunchIdColumnName}'.`
+            );
+        }
+
+        // Validate that the actual column names match the spec (this ignores Tag columns):
+        if (!isColumnNamingEquivalent(tranColumnsSpecs, tranTableColNames)) {
             throw new Error(
                 `Columns in table '${TableNameTransactions}' do not match expected transaction` +
                     ` header structure. Try deleting the entire table.`
@@ -182,20 +228,11 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 countEmptyRowsDeleted++;
             }
         }
+        tranTable.rows.load(["count", "items"]);
         await context.excel.sync();
         console.debug(`Deleted ${countEmptyRowsDeleted} empty rows from table '${tranTable.name}'.`);
 
-        // Refresh the table data after the earlier deletion:
-        tranTable.rows.load(["count", "items"]);
-        tranTable.columns.load(["count", "items"]);
-        await context.excel.sync();
-        for (const col of tranTable.columns.items) {
-            col.load("name");
-        }
-        await context.excel.sync();
-
         // Load data from the table into `existingTrans`:
-        const tranTableColNames = tranTable.columns.items.map((col) => col.name.trim());
 
         // Apply formatting:
         for (const tabCol of tranTable.columns.items) {
