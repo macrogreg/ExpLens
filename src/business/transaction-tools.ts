@@ -20,17 +20,44 @@ export const LunchIdColumnName = "LunchId";
 
 const AccountingWithMinusFormatStr = `_($* #,##0.00_);_($* -#,##0.00_);_($* "-"??_);_(@_)`;
 
+type ValueExtractor = (trans: Transaction) => string | boolean | number | null | undefined;
+
+type TransactionColumnFormatter = (
+    format: Excel.RangeFormat,
+    validation: Excel.DataValidation,
+    context: SyncContext
+) => Promise<void> | void;
+
 export interface TransactionColumnSpec {
     name: string;
     valueFn: ValueExtractor;
-    format: string | null;
+    numberFormat: null | string;
+    formatFn: null | TransactionColumnFormatter;
 }
 
 const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("date", (t) => timeStrToExcel(t.trn.date), "yyyy-mm-dd"),
 
     transColumn("Account", (t) => t.trn.account_display_name),
-    transColumn("Payer", (t) => t.pld?.account_owner),
+    transColumn(
+        "Payer",
+        (t) => {
+            const own = t.pld?.account_owner ?? "";
+            const norm = own
+                .replace(/[.,?!:_]/g, " ") // replace punctuation with space
+                .replace(/\s+/g, " ") // collapse consecutive whitespace
+                .trim();
+            const lowTl = norm.replace(/\b(\w)(\w*)/g, (_, first, tail) => first + tail.toLowerCase());
+            return lowTl;
+        },
+        null,
+        async (format, _, context) => {
+            format.font.load(["size"]);
+            await context.excel.sync();
+            format.font.size = Math.max(format.font.size - 2, 9);
+            format.horizontalAlignment = "Left";
+        }
+    ),
 
     transColumn("payee", (t) => t.trn.payee),
     transColumn("Amount", (t) => t.trn.to_base, AccountingWithMinusFormatStr),
@@ -181,16 +208,30 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("plaid:transaction_type", (t) => t.pld?.transaction_type),
     transColumn("plaid:unofficial_currency_code", (t) => t.pld?.unofficial_currency_code),
     transColumn("plaid:website", (t) => t.pld?.website),
-    transColumn(LunchIdColumnName, (t) => t.trn.id),
+
+    transColumn(
+        LunchIdColumnName,
+        (t) => t.trn.id,
+        null,
+        (format) => {
+            format.font.size = 6;
+            format.verticalAlignment = "Center";
+            format.horizontalAlignment = "Right";
+        }
+    ),
 ];
 
-type ValueExtractor = (trans: Transaction) => string | boolean | number | null | undefined;
-
-function transColumn(name: string, valueFn: ValueExtractor, format: string | null = null): TransactionColumnSpec {
+function transColumn(
+    name: string,
+    valueFn: ValueExtractor,
+    numberFormat: null | string = null,
+    formatFn: null | TransactionColumnFormatter = null
+): TransactionColumnSpec {
     return {
         name: name.trim(),
         valueFn,
-        format,
+        numberFormat,
+        formatFn: formatFn ?? setAllStopValidationRule,
     };
 }
 
@@ -198,7 +239,8 @@ function transTagColumn(tagGroupName: string): TransactionColumnSpec {
     return {
         name: formatTagGroupColumnHeader(tagGroupName),
         valueFn: (t: Transaction) => getTransactionTagsByGroup(t, tagGroupName),
-        format: null,
+        numberFormat: null,
+        formatFn: null,
     };
 }
 
@@ -219,15 +261,18 @@ export function createTransactionColumnsSpecs(context: SyncContext): IndexedMap<
 
 export function getTagColumnsPosition() {
     let p = transactionColumnsSpecs.findIndex((cs) => cs.name === TagColumnsPlaceholder);
-    if (p < 0) {
-        p = transactionColumnsSpecs.findIndex((cs) => cs.name.toUpperCase() === "CATEGORY");
+    if (p >= 0) {
+        return p;
     }
-    if (p < 0) {
-        p = transactionColumnsSpecs.findIndex((cs) => cs.name.toUpperCase() === "PAYEE");
-    }
-    if (p < 0) {
-        p = 0;
-    }
+
+    console.warn(
+        `The 'transactionColumnsSpecs' should contain '${TagColumnsPlaceholder}',` +
+            ` but it does not. A graceful fallback will be used, but this should be addressed!`
+    );
+
+    p = transactionColumnsSpecs.findIndex((cs) => cs.name.toUpperCase() === "CATEGORY");
+    if (p < 0) p = transactionColumnsSpecs.findIndex((cs) => cs.name.toUpperCase() === "PAYEE");
+    if (p < 0) p = 0;
     return p;
 }
 
@@ -293,4 +338,32 @@ function J(vals: (string | null | undefined)[] | null | undefined, separator: st
         return null;
     }
     return vals.map((v) => (isNullOrWhitespace(v) ? "*" : v)).join(separator);
+}
+
+async function setAllStopValidationRule(_: Excel.RangeFormat, validation: Excel.DataValidation, context: SyncContext) {
+    validation.clear();
+    await context.excel.sync();
+
+    validation.rule = { custom: { formula: '=("Cell managed by Lunch Master" = "Do not modify!")' } };
+
+    validation.errorAlert = {
+        showAlert: true,
+        style: Excel.DataValidationAlertStyle.warning,
+        title: "Cell protected by Lunch Master: Do not edit!",
+        message:
+            "This cell is managed by Lunch Master." +
+            "\nModifying it MAY break data look-up for other cells." +
+            "\nEven if nothing breaks, the change will NOT sync back to Lunch Money." +
+            "\n" +
+            "\nWe'll mark a Data Validation Error; you can clear it AT OR OWN RISK!",
+    };
+
+    if (validation.errorAlert.message.length > 230) {
+        console.warn(
+            `About to fail:\n` +
+                ` The length of 'validation.errorAlert.message'` +
+                ` MUST be <= 255, and SHOULD be <= 230 to leave space for Excel's postfixes.` +
+                `\n However, the length is ${validation.errorAlert.message.length}.`
+        );
+    }
 }

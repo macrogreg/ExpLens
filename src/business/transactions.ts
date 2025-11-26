@@ -146,6 +146,46 @@ async function createNewTranTable(
     return table;
 }
 
+async function applyColumnFormatting(
+    tranTable: Excel.Table,
+    tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
+    context: SyncContext
+) {
+    for (const tabCol of tranTable.columns.items) {
+        const colName = tabCol.name;
+        const colSpec = tranColumnsSpecs.getByKey(colName);
+        if (colSpec === undefined) {
+            continue;
+        }
+
+        const tabColRange = tabCol.getDataBodyRange();
+
+        const numFormat = colSpec.numberFormat;
+        if (numFormat) {
+            tabColRange.numberFormat = [[numFormat]];
+        }
+
+        const formatFn = colSpec.formatFn;
+        if (formatFn) {
+            try {
+                const formatFnRes = formatFn(tabColRange.format, tabColRange.dataValidation, context);
+                await formatFnRes;
+                await context.excel.sync();
+            } catch (err) {
+                console.error(
+                    `The formatFn of the column spec for '${colName}' threw an error.` +
+                        `\n    '${errorTypeMessageString(err)}'` +
+                        `\n\n We will skip over this and continue, but this needs to be corrected.`,
+                    `\n\nERR:\n`,
+                    err
+                );
+            }
+        }
+    }
+
+    await context.excel.sync();
+}
+
 export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {
     // Find and activate the Transactions sheet:
     const tranSheet = await ensureSheetActive(SheetNameTransactions, context.excel);
@@ -234,25 +274,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         // Load data from the table into `existingTrans`:
 
-        // Apply formatting:
-        for (const tabCol of tranTable.columns.items) {
-            if (tabCol.name === LunchIdColumnName) {
-                const tabColRange = tabCol.getDataBodyRange();
-                tabColRange.format.font.size = 6;
-                tabColRange.format.verticalAlignment = "Center";
-                tabColRange.format.horizontalAlignment = "Right";
-            }
-
-            const format = tranColumnsSpecs.getByKey(tabCol.name)?.format;
-            if (!format) {
-                continue;
-            }
-
-            const tabColRange = tabCol.getDataBodyRange();
-            tabColRange.numberFormat = [[format]];
-        }
-
-        await context.excel.sync();
+        console.debug(`Will read ${tranTable.rows.count} existing data rows from '${tranTable.name}'...`);
+        const msStartReadPreexistingData = performance.now();
 
         const existingTrans = new IndexedMap<number, TransactionRowData>();
 
@@ -293,14 +316,18 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             }
         }
 
-        console.debug(`Read ${existingTrans.length} existing data rows from table '${tranTable.name}'.`);
+        console.debug(
+            `Done reading ${existingTrans.length} existing data rows from table '${tranTable.name}'.` +
+                `\n    Time taken: ${performance.now() - msStartReadPreexistingData} msec.`
+        );
 
         // Fetch transactions:
 
         // Fetch Transactions from the Cloud:
         //
 
-        console.log("Will now fetch transactions from Lunch Money.");
+        console.log("Will fetch transactions from Lunch Money...");
+        const msStartFetchTransactions = performance.now();
 
         const startUtcDateStr = formatDateUtc(startDate);
         const endUtcDateStr = formatDateUtc(endDate);
@@ -310,11 +337,16 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             `get all transactions between ${startUtcDateStr} and ${endUtcDateStr} UTC`
         );
 
+        console.log(`Transactions fetched.\n    Time taken: ${performance.now() - msStartFetchTransactions} msec.`);
+
         // Parse fetched Transactions:
         const fetched: { transactions: Lunch.Transaction[]; has_more: boolean } = JSON.parse(fetchedResponseText);
-        console.log("Transactions fetched. Length:", fetched.transactions.length, "Has_more:", fetched.has_more);
+        console.log("Transactions parsed. Length:", fetched.transactions.length, "Has_more:", fetched.has_more);
         //console.debug("Fetched transactions:", fetched.transactions);
 
+        if (fetched.has_more) {
+            console.error("There are more transactions to fetch, but this is not yet supported!");
+        }
         const receivedTrans = new IndexedMap<number, Transaction>();
 
         // Parsed Plaid data for each transaction:
@@ -431,9 +463,14 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         tranTable.rows.load(["items", "count"]);
         if (tranRowsToAdd.length > 0) {
             tranTable.rows.add(0, tranRowsToAdd);
-            tranTable.getRange().format.autofitColumns();
+            await context.excel.sync();
         }
 
+        // Apply formatting to all columns and rows:
+        await applyColumnFormatting(tranTable, tranColumnsSpecs, context);
+
+        // Auto-fit the table:
+        tranTable.getRange().format.autofitColumns();
         await context.excel.sync();
     } catch (err) {
         console.error(err);
