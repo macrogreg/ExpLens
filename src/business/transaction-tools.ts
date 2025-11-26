@@ -231,21 +231,50 @@ function transColumn(
         name: name.trim(),
         valueFn,
         numberFormat,
-        formatFn: formatFn ?? setAllStopValidationRule,
+        formatFn:
+            formatFn ??
+            (ApplyReadOnlyCellValidationOptions.usePrompt || ApplyReadOnlyCellValidationOptions.useRule
+                ? applyReadOnlyCellValidation
+                : null),
     };
 }
 
-function transTagColumn(tagGroupName: string): TransactionColumnSpec {
+function transTagColumn(tagGroupName: string, context?: SyncContext): TransactionColumnSpec {
+    const validationListLocation = context?.tags.groupListFormulaLocations.get(tagGroupName);
+    // console.debug(
+    //     `transTagColumn(..): tagGroupName='${tagGroupName}'; validationListLocation:'${validationListLocation}'.`
+    // );
+
+    const validator: TransactionColumnFormatter = validationListLocation
+        ? async (_: Excel.RangeFormat, validation: Excel.DataValidation, context: SyncContext) => {
+              validation.clear();
+              await context.excel.sync();
+
+              validation.rule = { list: { inCellDropDown: true, source: `=${validationListLocation}#` } };
+              validation.ignoreBlanks = true;
+          }
+        : async (_: Excel.RangeFormat, validation: Excel.DataValidation, context: SyncContext) => {
+              validation.clear();
+              await context.excel.sync();
+
+              validation.ignoreBlanks = true;
+              validation.prompt = {
+                  showPrompt: true,
+                  title: "",
+                  message: `Failed to determine valid options for '${formatTagGroupColumnHeader(tagGroupName)}'`,
+              };
+          };
+
     return {
         name: formatTagGroupColumnHeader(tagGroupName),
         valueFn: (t: Transaction) => getTransactionTagsByGroup(t, tagGroupName),
         numberFormat: null,
-        formatFn: null,
+        formatFn: validator,
     };
 }
 
 export function createTransactionColumnsSpecs(context: SyncContext): IndexedMap<string, TransactionColumnSpec> {
-    const tagColsSpecs = getTagGroups(context.tags.assignable).map((grNm) => transTagColumn(grNm));
+    const tagColsSpecs = getTagGroups(context.tags.assignable).map((grNm) => transTagColumn(grNm, context));
 
     const allColsSpecs = transactionColumnsSpecs.flatMap((col) =>
         col.name === TagColumnsPlaceholder ? tagColsSpecs : col
@@ -340,30 +369,74 @@ function J(vals: (string | null | undefined)[] | null | undefined, separator: st
     return vals.map((v) => (isNullOrWhitespace(v) ? "*" : v)).join(separator);
 }
 
-async function setAllStopValidationRule(_: Excel.RangeFormat, validation: Excel.DataValidation, context: SyncContext) {
-    validation.clear();
-    await context.excel.sync();
+const ApplyReadOnlyCellValidationOptions = { usePrompt: false, useRule: true };
+function applyReadOnlyCellValidation(
+    format: Excel.RangeFormat,
+    validation: Excel.DataValidation,
+    context: SyncContext
+) {
+    return setAllStopValidationRule(format, validation, context, ApplyReadOnlyCellValidationOptions);
+}
 
-    validation.rule = { custom: { formula: '=("Cell managed by Lunch Master" = "Do not modify!")' } };
+async function setAllStopValidationRule(
+    _: Excel.RangeFormat,
+    validation: Excel.DataValidation,
+    context: SyncContext,
+    options: { usePrompt: boolean; useRule: boolean }
+) {
+    if (options.usePrompt || options.useRule) {
+        validation.clear();
+        await context.excel.sync();
+    }
 
-    validation.errorAlert = {
-        showAlert: true,
-        style: Excel.DataValidationAlertStyle.warning,
-        title: "Cell protected by Lunch Master: Do not edit!",
-        message:
-            "This cell is managed by Lunch Master." +
-            "\nModifying it MAY break data look-up for other cells." +
-            "\nEven if nothing breaks, the change will NOT sync back to Lunch Money." +
-            "\n" +
-            "\nWe'll mark a Data Validation Error; you can clear it AT OR OWN RISK!",
-    };
+    if (options.usePrompt) {
+        validation.prompt = {
+            showPrompt: true,
+            title: "Don't modify!",
+            message: "Lunch Master manages this cell for you.",
+        };
 
-    if (validation.errorAlert.message.length > 230) {
-        console.warn(
-            `About to fail:\n` +
-                ` The length of 'validation.errorAlert.message'` +
-                ` MUST be <= 255, and SHOULD be <= 230 to leave space for Excel's postfixes.` +
-                `\n However, the length is ${validation.errorAlert.message.length}.`
-        );
+        try {
+            if (validation.prompt.message.length > 230) {
+                console.warn(
+                    `About to fail:\n` +
+                        ` The length of 'validation.prompt.message'` +
+                        ` MUST be <= 255, and SHOULD be <= 230 to leave space for Excel's postfixes.` +
+                        `\n However, the length is ${validation.prompt.message.length}.`
+                );
+            }
+        } catch {
+            // If prompt was not set, length may not be loaded. Just ignore.
+        }
+    }
+
+    if (options.useRule) {
+        validation.rule = { custom: { formula: '=("Cell managed by Lunch Master" = "Do not modify!")' } };
+        validation.ignoreBlanks = false;
+
+        validation.errorAlert = {
+            showAlert: true,
+            style: Excel.DataValidationAlertStyle.warning,
+            title: "Cell protected by Lunch Master: Do not edit!",
+            message:
+                "This cell is managed by Lunch Master." +
+                "\nModifying it MAY break data look-up for other cells." +
+                "\nEven if nothing breaks, the change will NOT sync back to Lunch Money." +
+                "\n" +
+                "\nWe'll mark a Data Validation Error; you can clear it AT OR OWN RISK!",
+        };
+
+        try {
+            if (validation.errorAlert.message.length > 230) {
+                console.warn(
+                    `About to fail:\n` +
+                        ` The length of 'validation.errorAlert.message'` +
+                        ` MUST be <= 255, and SHOULD be <= 230 to leave space for Excel's postfixes.` +
+                        `\n However, the length is ${validation.errorAlert.message.length}.`
+                );
+            }
+        } catch {
+            // If alert was not set, length may not be loaded. Just ignore.
+        }
     }
 }

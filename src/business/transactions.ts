@@ -151,6 +151,9 @@ async function applyColumnFormatting(
     tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
     context: SyncContext
 ) {
+    console.debug("Will apply formatting to table columns...");
+    const msStartApplyFormatting = performance.now();
+
     for (const tabCol of tranTable.columns.items) {
         const colName = tabCol.name;
         const colSpec = tranColumnsSpecs.getByKey(colName);
@@ -184,6 +187,10 @@ async function applyColumnFormatting(
     }
 
     await context.excel.sync();
+
+    console.debug(
+        `Formatting applied to table columns.\n    Time taken: ${performance.now() - msStartApplyFormatting} msec.`
+    );
 }
 
 export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {

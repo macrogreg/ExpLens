@@ -260,11 +260,12 @@ export async function downloadTags(context: SyncContext) {
             groupListRange.load(["address"]);
             await context.excel.sync();
 
-            const groupNameRangeAddr = parseOnSheetAddress(groupNameRange.address);
-            context.tags.groupListFormulaLocations.set(groupName, groupListRange.address);
+            const groupNameRangeSheetAddr = parseOnSheetAddress(groupNameRange.address);
+            const groupListRangeAbsoluteAddr = groupListRange.address.replace(/([A-Z]+)(\d+)/g, "$$$1$$$2");
+            context.tags.groupListFormulaLocations.set(groupName, groupListRangeAbsoluteAddr);
             // console.debug(
-            //     `Tag Group #${g}: groupNameRangeAddr='${groupNameRangeAddr}';` +
-            //         ` groupListRange.address='${groupListRange.address}'.`
+            //     `Tag Group #${g}: groupNameRangeSheetAddr='${groupNameRangeSheetAddr}';` +
+            //         ` groupListRangeAbsoluteAddr='${groupListRangeAbsoluteAddr}'.`
             // );
 
             groupNameRange.formulas = [[""]];
@@ -288,12 +289,12 @@ export async function downloadTags(context: SyncContext) {
             groupListRange.values = [[""]];
             groupListRange.formulas = [
                 [
-                    `= FILTER(${TableNameTags}[${tagsTableHead_Val}], ${TableNameTags}[${tagsTableHead_Grp}]=${groupNameRangeAddr})`,
+                    `= FILTER(${TableNameTags}[${tagsTableHead_Val}], ${TableNameTags}[${tagsTableHead_Grp}]=${groupNameRangeSheetAddr})`,
                 ],
             ];
 
             groupCountRange.values = [[""]];
-            groupCountRange.formulas = [[`= COUNTA(${groupListRange.address}#)`]];
+            groupCountRange.formulas = [[`= COUNTA(${groupListRangeAbsoluteAddr}#)`]];
 
             groupNameRange.format.autofitColumns();
             groupListRange.format.autofitColumns();
