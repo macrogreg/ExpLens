@@ -1,18 +1,20 @@
 import type * as Lunch from "./lunchmoney-types";
 import { timeStrToExcel } from "./excel-util";
 import { isNullOrWhitespace } from "src/util/string_util";
-import { TagGroupSeparator } from "./tags";
+import { getTagGroups, getTagValues, TagGroupSeparator, type TagValuesCollection } from "./tags";
+import type { SyncContext } from "./sync-driver";
+import { IndexedMap } from "./IndexedMap";
 
 export interface Transaction {
     trn: Lunch.Transaction;
     pld: Lunch.PlaidMetadata | null;
-    tag: Map<string, Set<string>>;
+    tag: TagValuesCollection;
     grpMoniker: string;
     id: number;
 }
 
 export const TagColumnsPlaceholder = "<Tag Groups Columns>";
-export const TagGroupColumnNamePrefix = `Tags${TagGroupSeparator}`;
+const TagGroupColumnNamePrefix = `Tags${TagGroupSeparator}`;
 
 export const LunchIdColumnName = "LunchId";
 
@@ -24,7 +26,7 @@ export interface TransactionColumnSpec {
     format: string | null;
 }
 
-export const transactionColumnsSpecs: TransactionColumnSpec[] = [
+const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn(LunchIdColumnName, (t) => t.trn.id),
 
     transColumn("date", (t) => timeStrToExcel(t.trn.date), "yyyy-mm-dd"),
@@ -183,50 +185,46 @@ function transColumn(name: string, valueFn: ValueExtractor, format: string | nul
     };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function transTagColumn(tagGroupName: string): TransactionColumnSpec {
     return {
-        name: `${TagGroupColumnNamePrefix}${tagGroupName}`.trim(),
+        name: formatTagGroupColumnHeader(tagGroupName),
         valueFn: (t: Transaction) => getTransactionTagsByGroup(t, tagGroupName),
         format: null,
     };
 }
 
+export function createTransactionColumnsSpecs(context: SyncContext): IndexedMap<string, TransactionColumnSpec> {
+    const tagColsSpecs = getTagGroups(context.tags.assignable).map((grNm) => transTagColumn(grNm));
+
+    const allColsSpecs = transactionColumnsSpecs.flatMap((col) =>
+        col.name === TagColumnsPlaceholder ? tagColsSpecs : col
+    );
+
+    const specs = new IndexedMap<string, TransactionColumnSpec>();
+    for (const cs of allColsSpecs) {
+        specs.tryAdd(cs.name, cs);
+    }
+
+    return specs;
+}
+
 function getTransactionTagsByGroup(tran: Transaction, tagGroupName: string) {
-    const groupTagsSet = tran.tag.get(tagGroupName);
-    const groupTagsList = groupTagsSet === undefined ? [] : [...groupTagsSet].sort();
-    const tagsStr: string | null = J(groupTagsList, TagListSeparator);
+    const groupTagsList = getTagValues(tran.tag, tagGroupName);
+    const tagsStr = J(groupTagsList, TagListSeparator) as string;
     return tagsStr;
 }
 
-export function formatTagGroupColumnHeader(groupName: string) {
-    return `${TagGroupColumnNamePrefix}${groupName}`;
+function formatTagGroupColumnHeader(groupName: string) {
+    return `${TagGroupColumnNamePrefix}${groupName}`.trim();
 }
 
 export function tryGetTagGroupFromColumnName(columnName: string): string | undefined {
     columnName = columnName.trim();
-    const p = columnName.indexOf(TagGroupColumnNamePrefix);
-    if (p != 0) {
+    if (!columnName.startsWith(TagGroupColumnNamePrefix)) {
         return undefined;
     }
 
-    return columnName.substring(p + TagGroupColumnNamePrefix.length);
-}
-
-export const StructureLevelSeparator = " / ";
-export const TagListSeparator = ", ";
-
-function JJ(v1: string | null | undefined, v2: string | null | undefined, separator: string = StructureLevelSeparator) {
-    const r1 = v1 === null || v1 === undefined ? "" : v1;
-    const r2 = v2 === null || v2 === undefined ? "" : v2;
-    return r1.length > 0 && r2.length > 0 ? r1 + separator + r2 : r1 + r2;
-}
-
-function J(vals: (string | null | undefined)[] | null | undefined, separator: string = StructureLevelSeparator) {
-    if (vals === null || vals === undefined) {
-        return null;
-    }
-    return vals.map((v) => (isNullOrWhitespace(v) ? "*" : v)).join(separator);
+    return columnName.substring(TagGroupColumnNamePrefix.length);
 }
 
 export type TransactionRowValue = string | number | boolean | null;
@@ -239,9 +237,9 @@ export type TransactionRowData = {
 export function getTransactionColumnValue(
     tran: Transaction,
     colName: string,
-    columnSpecs: Record<string, TransactionColumnSpec>
+    columnSpecs: IndexedMap<string, TransactionColumnSpec>
 ): string | boolean | number {
-    const colSpec = columnSpecs[colName];
+    const colSpec = columnSpecs.getByKey(colName);
 
     let value;
     if (colSpec !== undefined) {
@@ -258,72 +256,18 @@ export function getTransactionColumnValue(
     return value === null || value === undefined ? "" : value;
 }
 
-// function getProperty(container: object, key: string): string | number | boolean | undefined {
-//     return (container as Record<string, string | number | boolean>)[key];
-// }
+const StructureLevelSeparator = " / ";
+const TagListSeparator = ", ";
 
-// interface TransactionStructure {
-//     [key: string]: string | boolean | number | TransactionStructure;
-// }
+function JJ(v1: string | null | undefined, v2: string | null | undefined, separator: string = StructureLevelSeparator) {
+    const r1 = v1 === null || v1 === undefined ? "" : v1;
+    const r2 = v2 === null || v2 === undefined ? "" : v2;
+    return r1.length > 0 && r2.length > 0 ? r1 + separator + r2 : r1 + r2;
+}
 
-// export interface Transaction extends TransactionStructure {
-//     lunchId: string;
-//}
-//type ValueExtractor<T extends string | boolean | number> = (trans: Transaction) => T;
-// function columnDescriptor<T extends string | boolean | number>(name: string, path: string, displayOrder: number) {
-//     let valueExtractorVer = 0;
-//     let valueExtractor: ValueExtractor<T> = (trans: Transaction) => {
-//         const errMsgBuilder = (d: number, key: string) =>
-//             `Default ValueExtractor for '${name}' failed to` +
-//             ` extract value from trans '${trans.lunchId}' at depth ${d} using key '${key}' based` +
-//             ` on path '${path}'`;
-
-//         const lookup = path.split(".");
-//         let selected: TransactionStructure = trans;
-//         let d = 0;
-//         while (true) {
-//             const key = lookup[d]!;
-//             const dVal = selected[key];
-
-//             if (dVal === undefined) {
-//                 const errMsg = `${errMsgBuilder(d, key)}: NO KEY-VALUE.`;
-//                 console.error(errMsg, "Path:", path, "Transaction:", trans);
-//                 throw new Error(errMsg);
-//             }
-
-//             const valType = typeof dVal;
-//             if (d === lookup.length - 1) {
-//                 if (valType === "string" || valType === "boolean" || valType === "number") {
-//                     return dVal as T;
-//                 }
-//                 const errMsg = `${errMsgBuilder(d, key)}: UNEXPECTED VAL TYPE (${valType}).`;
-//                 console.error(errMsg, "Path:", path, "Value:", dVal, "Transaction:", trans);
-//                 throw new Error(errMsg);
-//             }
-
-//             if (valType !== "object") {
-//                 const errMsg = `${errMsgBuilder(d, key)}: VALUE NOT EXPANDABLE (${valType}), BUT PATH NOT EXHAUSTED.`;
-//                 console.error(errMsg, "Path:", path, "Value:", dVal, "Transaction:", trans);
-//                 throw new Error(errMsg);
-//             }
-
-//             selected = dVal as TransactionStructure;
-//             d++;
-//         }
-//     };
-
-//     return {
-//         name: ref<string>(name),
-
-//         path: readonly(ref<string>(path)),
-
-//         setValueExactor: (valExtractFn: ValueExtractor<T>) => {
-//             valueExtractor = valExtractFn;
-//             valueExtractorVer++;
-//         },
-
-//         valueExtractorVersion: computed(() => valueExtractorVer),
-
-//         getValue: (trans: Transaction) => valueExtractor(trans),
-//     };
-// }
+function J(vals: (string | null | undefined)[] | null | undefined, separator: string = StructureLevelSeparator) {
+    if (vals === null || vals === undefined) {
+        return null;
+    }
+    return vals.map((v) => (isNullOrWhitespace(v) ? "*" : v)).join(separator);
+}

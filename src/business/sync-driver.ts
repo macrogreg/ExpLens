@@ -67,7 +67,7 @@ export async function downloadData(
 
         await downloadTags(syncCtx);
         await downloadCategories(context);
-        await downloadTransactions(startDate, endDate, context);
+        await downloadTransactions(startDate, endDate, syncCtx);
     });
 
     loadedAppSettings.lastCompletedSyncUtc.value = new Date();

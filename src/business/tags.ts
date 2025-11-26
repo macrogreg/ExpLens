@@ -12,7 +12,7 @@ const TableNameTags = "LM.TagsTable";
 const TableNameTagGroups = "LM.TagGroupsTable";
 
 export const TagGroupSeparator = ":";
-export const UngroupedTagMoniker = ":Ungrouped";
+const UngroupedTagMoniker = ":Ungrouped";
 
 export type TagValuesCollection = Map<string, Set<string>>;
 
@@ -262,10 +262,10 @@ export async function downloadTags(context: SyncContext) {
 
             const groupNameRangeAddr = parseOnSheetAddress(groupNameRange.address);
             context.tags.groupListFormulaLocations.set(groupName, groupListRange.address);
-            console.debug(
-                `Tag Group #${g}: groupNameRangeAddr='${groupNameRangeAddr}';` +
-                    ` groupListRange.address='${groupListRange.address}'.`
-            );
+            // console.debug(
+            //     `Tag Group #${g}: groupNameRangeAddr='${groupNameRangeAddr}';` +
+            //         ` groupListRange.address='${groupListRange.address}'.`
+            // );
 
             groupNameRange.formulas = [[""]];
             groupNameRange.values = [[groupName]];

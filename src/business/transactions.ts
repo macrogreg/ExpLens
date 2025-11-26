@@ -1,31 +1,33 @@
 /// <reference types="office-js" />
 
 import { errorTypeMessageString, formatDateUtc } from "src/util/format_util";
-import { ensureSheetActive, findTableByName } from "./excel-util";
+import { ensureSheetActive, findTableByNameOnSheet, getRangeBasedOn } from "./excel-util";
 import type { Transaction, TransactionColumnSpec, TransactionRowData, TransactionRowValue } from "./transaction-tools";
 import {
-    formatTagGroupColumnHeader,
     getTransactionColumnValue,
     LunchIdColumnName,
-    TagColumnsPlaceholder,
-    transactionColumnsSpecs,
+    createTransactionColumnsSpecs,
     tryGetTagGroupFromColumnName,
 } from "./transaction-tools";
 import { isNullOrWhitespace } from "src/util/string_util";
-import { parseTag, UngroupedTagMoniker } from "./tags";
+import { parseTag } from "./tags";
 import { authorizedFetch } from "./fetch-tools";
 import type * as Lunch from "./lunchmoney-types";
 import { IndexedMap } from "./IndexedMap";
+import type { SyncContext } from "./sync-driver";
 
 export const SheetNameTransactions = "LM.Transactions";
 const TableNameTransactions = "LM.TransactionsTable";
 
-function isColumnNamingEquivalent(expectedColumnsNames: string[], actualColumnNames: string[]) {
+function isColumnNamingEquivalent(
+    columnsSpecs: IndexedMap<string, TransactionColumnSpec>,
+    actualColumnNames: string[]
+) {
     let expC = 0,
         actC = 0;
     while (true) {
         // Skip tag columns during structural comparison:
-        while (expC < expectedColumnsNames.length && TagColumnsPlaceholder === expectedColumnsNames[expC]) {
+        while (expC < columnsSpecs.length && tryGetTagGroupFromColumnName(columnsSpecs.getByIndex(expC)!.name)) {
             expC++;
         }
         while (actC < actualColumnNames.length && tryGetTagGroupFromColumnName(actualColumnNames[actC]!)) {
@@ -33,15 +35,15 @@ function isColumnNamingEquivalent(expectedColumnsNames: string[], actualColumnNa
         }
 
         // If both comparison column lists are exhausted, they match:
-        if (expC === expectedColumnsNames.length && actC === actualColumnNames.length) {
+        if (expC === columnsSpecs.length && actC === actualColumnNames.length) {
             return true;
         }
 
         // If only of of the comparison column lists is exhausted, they do not match:
-        if (expC === expectedColumnsNames.length || actC === actualColumnNames.length) {
+        if (expC === columnsSpecs.length || actC === actualColumnNames.length) {
             console.error(
                 `isColumnNamingEquivalent(..):\n` +
-                    `The lengths of 'expectedColumnsNames' (${expectedColumnsNames.length}) and` +
+                    `The lengths of 'columnsSpecs' (${columnsSpecs.length}) and` +
                     ` actualColumnNames (${actualColumnNames.length}) are different after accounting` +
                     ` for dynamic tag columns.`
             );
@@ -49,13 +51,12 @@ function isColumnNamingEquivalent(expectedColumnsNames: string[], actualColumnNa
         }
 
         // If col names at current cursors are different, lists do not match:
-        if (expectedColumnsNames[expC] !== actualColumnNames[actC]) {
+        if (columnsSpecs.getByIndex(expC)?.name !== actualColumnNames[actC]) {
             console.error(
                 `isColumnNamingEquivalent(..):\n` +
                     `After accounting for dynamic tag columns, aligned headers are not the same:\n` +
-                    `expectedColumnsNames[${expC}] !== actualColumnNames[${actC}]` +
-                    ` ('${expectedColumnsNames[expC]}' !=== '${actualColumnNames[actC]}') ` +
-                    ` for dynamic tag columns.`
+                    `columnsSpecs.getByIndex(${expC})?.name !== actualColumnNames[${actC}]` +
+                    ` ('${columnsSpecs.getByIndex(expC)?.name}' !=== '${actualColumnNames[actC]}').`
             );
             return false;
         }
@@ -66,24 +67,26 @@ function isColumnNamingEquivalent(expectedColumnsNames: string[], actualColumnNa
     }
 }
 
-async function createNewTranTable(context: Excel.RequestContext, sheet: Excel.Worksheet): Promise<Excel.Table> {
+async function createNewTranTable(
+    tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
+    sheet: Excel.Worksheet,
+    context: Excel.RequestContext
+): Promise<Excel.Table> {
     // Table location:
     const tranTableOffs = { row: 7, col: 1 };
 
     // No data is loaded yet. Only use the no-tag-group column for tags initially:
-    const tranSpecColNames = transactionColumnsSpecs.map((col) =>
-        col.name === TagColumnsPlaceholder ? formatTagGroupColumnHeader(UngroupedTagMoniker) : col.name
-    );
+    const tranSpecColNames = tranColumnsSpecs.map((col) => col.name);
 
     // Clear the are where we are about to create the table:
-    const tableInitRange = sheet.getRangeByIndexes(tranTableOffs.row, tranTableOffs.col, 2, tranSpecColNames.length);
+    const tableInitRange = getRangeBasedOn(sheet, tranTableOffs, 0, 0, 2, tranSpecColNames.length);
 
     tableInitRange.clear();
     tableInitRange.conditionalFormats.clearAll();
     await context.sync();
 
     // Print column headers:
-    sheet.getRangeByIndexes(tranTableOffs.row, tranTableOffs.col, 1, tranSpecColNames.length).values = [tranSpecColNames];
+    getRangeBasedOn(sheet, tranTableOffs, 0, 0, 1, tranSpecColNames.length).values = [tranSpecColNames];
 
     // Create table:
     const table = sheet.tables.add(tableInitRange, true);
@@ -101,33 +104,32 @@ async function createNewTranTable(context: Excel.RequestContext, sheet: Excel.Wo
     return table;
 }
 
-export async function downloadTransactions(startDate: Date, endDate: Date, context: Excel.RequestContext) {
+export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {
     // Find and activate the Transactions sheet:
-    const tranSheet = await ensureSheetActive(SheetNameTransactions, context);
+    const tranSheet = await ensureSheetActive(SheetNameTransactions, context.excel);
 
     const errorMsgCell = tranSheet.getRange("B4");
     errorMsgCell.clear();
-    await context.sync();
+    await context.excel.sync();
 
     try {
-        // Is there an existing Transactions table?
-        const prevTranTableInfo = await findTableByName(TableNameTransactions, context);
+        const tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec> = createTransactionColumnsSpecs(context);
 
-        // There is an existing tags table, but it is not on this sheet:
-        if (prevTranTableInfo && prevTranTableInfo.sheet.id !== tranSheet.id) {
-            throw new Error(
-                `Table '${TableNameTransactions}' exists on the wrong sheet: ${prevTranTableInfo.range.address}.` +
-                    `\nDon't edit this Transactions-sheet. Don't name any objects using prefix 'LM.'`
-            );
-        }
+        // Is there an existing Transactions table?
+        const prevTranTableInfo = await findTableByNameOnSheet(
+            TableNameTransactions,
+            context.sheets.trans,
+            context.excel
+        );
 
         // If there is no existing table, create an empty one:
         const tranTable =
-            prevTranTableInfo === null ? await createNewTranTable(context, tranSheet) : prevTranTableInfo.table;
+            prevTranTableInfo === null
+                ? await createNewTranTable(tranColumnsSpecs, tranSheet, context.excel)
+                : prevTranTableInfo.table;
 
         // Get the expected column names:
-        const tranSpecColNames = transactionColumnsSpecs.map((col) => col.name);
-        if (!tranSpecColNames.includes(LunchIdColumnName)) {
+        if (!tranColumnsSpecs.has(LunchIdColumnName)) {
             const preexistenceQualifier = prevTranTableInfo === null ? "newly created" : "pre-existing";
             throw new Error(
                 `The table '${tranTable.name}' (${preexistenceQualifier}) does not contain` +
@@ -137,16 +139,16 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         // Load the column names actually present in the table:
         tranTable.columns.load("items");
-        await context.sync();
+        await context.excel.sync();
         for (const col of tranTable.columns.items) {
             col.load("name");
         }
-        await context.sync();
+        await context.excel.sync();
 
         // Validate that the actual column names match the spec:
         if (
             !isColumnNamingEquivalent(
-                tranSpecColNames,
+                tranColumnsSpecs,
                 tranTable.columns.items.map((col) => col.name.trim())
             )
         ) {
@@ -160,7 +162,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         const tranTableBodyRange = tranTable.getDataBodyRange();
         tranTable.rows.load(["count"]);
         tranTableBodyRange.load("values");
-        await context.sync();
+        await context.excel.sync();
 
         const tranTableRowCount = tranTable.rows.count;
         const tranTableValues = tranTableBodyRange.values;
@@ -180,26 +182,20 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 countEmptyRowsDeleted++;
             }
         }
-        await context.sync();
+        await context.excel.sync();
         console.debug(`Deleted ${countEmptyRowsDeleted} empty rows from table '${tranTable.name}'.`);
 
         // Refresh the table data after the earlier deletion:
         tranTable.rows.load(["count", "items"]);
         tranTable.columns.load(["count", "items"]);
-        await context.sync();
+        await context.excel.sync();
         for (const col of tranTable.columns.items) {
             col.load("name");
         }
-        await context.sync();
+        await context.excel.sync();
 
         // Load data from the table into `existingTrans`:
         const tranTableColNames = tranTable.columns.items.map((col) => col.name.trim());
-
-        // Build lookup of column specs:
-        const tranColSpecs: Record<string, TransactionColumnSpec> = {};
-        for (const spec of transactionColumnsSpecs) {
-            tranColSpecs[spec.name] = spec;
-        }
 
         // Apply formatting:
         for (const tabCol of tranTable.columns.items) {
@@ -210,7 +206,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 tabColRange.format.horizontalAlignment = "Right";
             }
 
-            const format = tranColSpecs[tabCol.name]?.format;
+            const format = tranColumnsSpecs.getByKey(tabCol.name)?.format;
             if (!format) {
                 continue;
             }
@@ -219,7 +215,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             tabColRange.numberFormat = [[format]];
         }
 
-        await context.sync();
+        await context.excel.sync();
 
         const existingTrans = new IndexedMap<number, TransactionRowData>();
 
@@ -227,7 +223,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             // Load the values of this row:
             const rowRange = tranTable.rows.getItemAt(r).getRange();
             rowRange.load(["values", "address"]);
-            await context.sync();
+            await context.excel.sync();
             const rowRangeValues = rowRange.values[0]!;
 
             // Build the data object:
@@ -321,9 +317,12 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                         "plaidDataStr:",
                         plaidDataStr
                     );
-                    throw new Error(`Cannot parse plaid_metadata for fetched transaction #${t} (id=${fetchedTran?.id}).`, {
-                        cause: err,
-                    });
+                    throw new Error(
+                        `Cannot parse plaid_metadata for fetched transaction #${t} (id=${fetchedTran?.id}).`,
+                        {
+                            cause: err,
+                        }
+                    );
                 }
             }
         }
@@ -382,7 +381,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
             const rowToAdd: (string | boolean | number)[] = [];
             for (const colName of tranTableColNames) {
-                rowToAdd.push(getTransactionColumnValue(tran, colName, tranColSpecs));
+                rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs));
             }
             tranRowsToAdd.push(rowToAdd);
         }
@@ -392,16 +391,18 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 ` and ${countExistingTransDetected} existing items.`
         );
 
-        tranTable.rows.add(0, tranRowsToAdd);
         tranTable.rows.load(["items", "count"]);
-        tranTable.getRange().format.autofitColumns();
+        if (tranRowsToAdd.length > 0) {
+            tranTable.rows.add(0, tranRowsToAdd);
+            tranTable.getRange().format.autofitColumns();
+        }
 
-        await context.sync();
+        await context.excel.sync();
     } catch (err) {
         console.error(err);
         errorMsgCell.values = [[`ERR: ${errorTypeMessageString(err)}`]];
         errorMsgCell.format.font.color = "#FF0000";
-        await context.sync();
+        await context.excel.sync();
         throw err;
     }
 }

@@ -1,6 +1,6 @@
 export class IndexedMap<TKey, TValue> {
     readonly #orderedData: TValue[] = [];
-    readonly #indexedData = new Map<TKey, number>();
+    readonly #indexedData = new Map<TKey, TValue>();
 
     get length(): number {
         return this.#orderedData.length;
@@ -11,8 +11,8 @@ export class IndexedMap<TKey, TValue> {
             return false;
         }
 
-        const p = this.#orderedData.push(value);
-        this.#indexedData.set(key, p - 1);
+        this.#orderedData.push(value);
+        this.#indexedData.set(key, value);
         return true;
     };
 
@@ -25,14 +25,14 @@ export class IndexedMap<TKey, TValue> {
     };
 
     getByKey = (key: TKey) => {
-        const p: number | undefined = this.#indexedData.get(key);
-        if (p === undefined) {
-            return undefined;
-        }
-        return this.getByIndex(p);
+        return this.#indexedData.get(key);
     };
 
-    *[Symbol.iterator]() {
-        yield* this.#orderedData;
+    [Symbol.iterator]() {
+        return this.#orderedData[Symbol.iterator]();
     }
+
+    map = <TTarget>(callbackFn: (val: TValue, index: number) => TTarget): TTarget[] => {
+        return this.#orderedData.map(callbackFn);
+    };
 }
