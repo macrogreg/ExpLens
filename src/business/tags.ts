@@ -72,8 +72,11 @@ export async function downloadTags(context: SyncContext) {
     await context.excel.sync();
 
     // Clear area for the error messages:
-    const errorMsgCell = context.sheets.tags.getRange("B4");
-    errorMsgCell.clear();
+    const errorMsgBackgroundRange = context.sheets.tags.getRange("B4:F4");
+    errorMsgBackgroundRange.clear();
+    // errorMsgBackgroundRange.merge();
+    // errorMsgBackgroundRange.format.horizontalAlignment = Excel.HorizontalAlignment.left;
+    const errorMsgRange = errorMsgBackgroundRange.getCell(0, 0);
     await context.excel.sync();
 
     try {
@@ -84,12 +87,30 @@ export async function downloadTags(context: SyncContext) {
         const tagsTableHeaderNames = ["id", "name", "description", "archived", tagsTableHead_Grp, tagsTableHead_Val];
 
         // Sheet header:
-        context.sheets.tags.getRange("B3").values = [["Tags"]];
-        context.sheets.tags.getRange("B3:C3").style = "Heading 1";
-        await context.excel.sync();
+        {
+            context.sheets.tags.getRange("B2").values = [["Tags"]];
+            context.sheets.tags.getRange("B2:E2").style = "Heading 1";
+
+            const tabRdOnlyMsgRange = context.sheets.tags.getRange("B3:E3");
+            tabRdOnlyMsgRange.clear();
+            tabRdOnlyMsgRange.merge();
+            tabRdOnlyMsgRange.format.horizontalAlignment = Excel.HorizontalAlignment.left;
+            tabRdOnlyMsgRange.format.verticalAlignment = Excel.VerticalAlignment.center;
+            tabRdOnlyMsgRange.format.fill.color = "#fff8dc";
+            tabRdOnlyMsgRange.format.font.color = "d76dcc";
+            tabRdOnlyMsgRange.format.font.size = 10;
+
+            tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by Lunch Master. Do not modify."]];
+
+            await context.excel.sync();
+        }
 
         // Fetch Tags from the Cloud:
         const fetchedResponseText = await authorizedFetch("GET", "tags", "get all tags");
+
+        // if ("Testing errors".length < 100) {
+        //     throw new Error("A test error was thrown. A detailed description of this error should be displayed.");
+        // }
 
         // Parse fetched Tags:
         const parsedTags: Tag[] = JSON.parse(fetchedResponseText);
@@ -312,8 +333,8 @@ export async function downloadTags(context: SyncContext) {
         console.debug(`New Tags Groups table '${TableNameTagGroups}' created.`);
     } catch (err) {
         console.error(err);
-        errorMsgCell.values = [[`ERR: ${errorTypeMessageString(err)}`]];
-        errorMsgCell.format.font.color = "#FF0000";
+        errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];
+        errorMsgRange.format.font.color = "#FF0000";
         await context.excel.sync();
         throw err;
     }

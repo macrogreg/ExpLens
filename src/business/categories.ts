@@ -72,8 +72,12 @@ export async function downloadCategories(context: Excel.RequestContext) {
     // Find and activate the Categories sheet:
     const categSheet = await ensureSheetActive(SheetNameCategories, context);
 
-    const errorMsgCell = categSheet.getRange("B4");
-    errorMsgCell.clear();
+    // Clear and prepare the location for printing potential errors:
+    const errorMsgBackgroundRange = categSheet.getRange("B4:F4");
+    errorMsgBackgroundRange.clear();
+    // errorMsgBackgroundRange.merge();
+    // errorMsgBackgroundRange.format.horizontalAlignment = Excel.HorizontalAlignment.left;
+    const errorMsgRange = errorMsgBackgroundRange.getCell(0, 0);
     await context.sync();
 
     try {
@@ -163,7 +167,12 @@ export async function downloadCategories(context: Excel.RequestContext) {
 
         // Frame Categ table:
         const categTable = categSheet.tables.add(
-            categSheet.getRangeByIndexes(catTableOffs.row, catTableOffs.col, categories.length + 1, categoryHeaders.length),
+            categSheet.getRangeByIndexes(
+                catTableOffs.row,
+                catTableOffs.col,
+                categories.length + 1,
+                categoryHeaders.length
+            ),
             true
         );
         categTable.name = TableNameCategories;
@@ -173,8 +182,12 @@ export async function downloadCategories(context: Excel.RequestContext) {
         for (let h = 0; h < categoryHeaders.length; h++) {
             const catName = categoryHeaders[h]!;
             if (catName.endsWith("ExcelUtc")) {
-                categSheet.getRangeByIndexes(catTableOffs.row + 1, catTableOffs.col + h, categories.length, 1).numberFormat =
-                    [["yyyy-mm-dd hh:mm"]];
+                categSheet.getRangeByIndexes(
+                    catTableOffs.row + 1,
+                    catTableOffs.col + h,
+                    categories.length,
+                    1
+                ).numberFormat = [["yyyy-mm-dd hh:mm"]];
             }
         }
 
@@ -187,7 +200,12 @@ export async function downloadCategories(context: Excel.RequestContext) {
         leafCatsHeadRange.format.fill.color = "#0f9ed5";
         leafCatsHeadRange.format.font.color = "#FFFFFF";
 
-        const leafCatsFormulaRange = categSheet.getRangeByIndexes(catLeafsTableOffs.row + 1, catLeafsTableOffs.col, 1, 1);
+        const leafCatsFormulaRange = categSheet.getRangeByIndexes(
+            catLeafsTableOffs.row + 1,
+            catLeafsTableOffs.col,
+            1,
+            1
+        );
         leafCatsFormulaRange.load("address");
         leafCatsFormulaRange.formulas = [
             [
@@ -253,19 +271,34 @@ export async function downloadCategories(context: Excel.RequestContext) {
         await context.sync();
 
         // Headings:
-        categSheet.getRange("B3").values = [["Categories"]];
-        categSheet.getRange("B3:C3").style = "Heading 1";
+        {
+            // Sheet header:
+            categSheet.getRange("B2").values = [["Categories"]];
+            categSheet.getRange("B2:E2").style = "Heading 1";
+
+            const tabRdOnlyMsgRange = categSheet.getRange("B3:E3");
+            tabRdOnlyMsgRange.clear();
+            tabRdOnlyMsgRange.merge();
+            tabRdOnlyMsgRange.format.horizontalAlignment = Excel.HorizontalAlignment.left;
+            tabRdOnlyMsgRange.format.verticalAlignment = Excel.VerticalAlignment.center;
+            tabRdOnlyMsgRange.format.fill.color = "#fff8dc";
+            tabRdOnlyMsgRange.format.font.color = "d76dcc";
+            tabRdOnlyMsgRange.format.font.size = 10;
+
+            tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by Lunch Master. Do not modify."]];
+        }
 
         categSheet.getRange("B5").values = [["Leaf Categories"]];
         categSheet.getRange("B5:B5").style = "Heading 2";
 
         categSheet.getRange("D5").values = [["All Categories"]];
         categSheet.getRangeByIndexes(4, 3, 1, categoryHeaders.length).style = "Heading 2";
+
         await context.sync();
     } catch (err) {
         console.error(err);
-        errorMsgCell.values = [[`ERR: ${errorTypeMessageString(err)}`]];
-        errorMsgCell.format.font.color = "#FF0000";
+        errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];
+        errorMsgRange.format.font.color = "#FF0000";
         await context.sync();
         throw err;
     }

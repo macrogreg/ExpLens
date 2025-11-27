@@ -20,7 +20,7 @@ export const LunchIdColumnName = "LunchId";
 
 const AccountingWithMinusFormatStr = `_($* #,##0.00_);_($* -#,##0.00_);_($* "-"??_);_(@_)`;
 
-type ValueExtractor = (trans: Transaction) => string | boolean | number | null | undefined;
+type ValueExtractor = (trans: Transaction, context: SyncContext) => string | boolean | number | null | undefined;
 
 type TransactionColumnFormatter = (
     format: Excel.RangeFormat,
@@ -34,6 +34,8 @@ export interface TransactionColumnSpec {
     numberFormat: null | string;
     formatFn: null | TransactionColumnFormatter;
 }
+
+const ApplyReadOnlyCellValidationOptions = { usePrompt: false, useRule: true };
 
 const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("date", (t) => timeStrToExcel(t.trn.date), "yyyy-mm-dd"),
@@ -219,6 +221,8 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
             format.horizontalAlignment = "Right";
         }
     ),
+
+    transColumn("plaid:website", (t) => t.pld?.website),
 ];
 
 function transColumn(
@@ -334,13 +338,14 @@ export type TransactionRowData = {
 export function getTransactionColumnValue(
     tran: Transaction,
     colName: string,
-    columnSpecs: IndexedMap<string, TransactionColumnSpec>
+    columnSpecs: IndexedMap<string, TransactionColumnSpec>,
+    context: SyncContext
 ): string | boolean | number {
     const colSpec = columnSpecs.getByKey(colName);
 
     let value;
     if (colSpec !== undefined) {
-        value = colSpec.valueFn(tran);
+        value = colSpec.valueFn(tran, context);
     } else {
         const tagGroupName = tryGetTagGroupFromColumnName(colName);
         if (tagGroupName !== undefined) {
@@ -369,7 +374,6 @@ function J(vals: (string | null | undefined)[] | null | undefined, separator: st
     return vals.map((v) => (isNullOrWhitespace(v) ? "*" : v)).join(separator);
 }
 
-const ApplyReadOnlyCellValidationOptions = { usePrompt: false, useRule: true };
 function applyReadOnlyCellValidation(
     format: Excel.RangeFormat,
     validation: Excel.DataValidation,

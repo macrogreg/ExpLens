@@ -11,6 +11,7 @@ import { ensureSheetActive } from "./excel-util";
 
 export type SyncContext = {
     excel: Excel.RequestContext;
+    syncVersion: number;
     sheets: {
         tags: Excel.Worksheet;
         cats: Excel.Worksheet;
@@ -23,55 +24,69 @@ export type SyncContext = {
     };
 };
 
+let isSyncInProgress = false;
+
 export async function downloadData(
     startDate: Date,
     endDate: Date,
     replaceExistingTransactions: boolean
 ): Promise<void> {
-    console.log(
-        `Starting downloadData(startDate=${formatDateUtc(startDate)}, endDate=${formatDateUtc(endDate)},` +
-            ` replaceExistingTransactions=${replaceExistingTransactions}).`
-    );
-
-    const loadedAppSettings = await useSettings();
-
-    {
-        const apiToken = loadedAppSettings.apiToken.value;
-        if (isNullOrWhitespace(apiToken)) {
-            console.log("No API token. Cannot proceed with download");
-            return;
-        }
-
-        console.debug(`downloadData(..): has API token (${apiToken!.length} chars).`);
+    if (isSyncInProgress === true) {
+        throw new Error("Cannot star data download, because data sync is already in progress.");
     }
 
-    await Excel.run(async (context: Excel.RequestContext) => {
-        // We need to ensure sheets creation ion the order we want them to appear in the document:
-        const transSheet = await ensureSheetActive(SheetNameTransactions, context);
-        const tagsSheet = await ensureSheetActive(SheetNameTags, context);
-        const catsSheets = await ensureSheetActive(SheetNameCategories, context);
+    try {
+        isSyncInProgress = true;
 
-        const syncCtx: SyncContext = {
-            excel: context,
-            sheets: {
-                trans: transSheet,
-                tags: tagsSheet,
-                cats: catsSheets,
-            },
-            tags: {
-                assignable: new Map<string, Set<string>>(),
-                groupListFormulaLocations: new Map<string, string>(),
-                byId: new Map<number, TagInfo>(),
-            },
-        };
+        console.log(
+            `Starting downloadData(startDate=${formatDateUtc(startDate)}, endDate=${formatDateUtc(endDate)},` +
+                ` replaceExistingTransactions=${replaceExistingTransactions}).`
+        );
 
-        await downloadTags(syncCtx);
-        await downloadCategories(context);
-        await downloadTransactions(startDate, endDate, syncCtx);
-    });
+        const loadedAppSettings = await useSettings();
+        const currentSyncVersion = loadedAppSettings.lastCompletedSyncVersion.value + 1;
 
-    loadedAppSettings.lastCompletedSyncUtc.value = new Date();
-    loadedAppSettings.lastCompletedSyncVersion.value = loadedAppSettings.lastCompletedSyncVersion.value + 1;
+        {
+            const apiToken = loadedAppSettings.apiToken.value;
+            if (isNullOrWhitespace(apiToken)) {
+                console.log("No API token. Cannot proceed with download");
+                return;
+            }
 
-    console.log(`Completed downloadData(..).`);
+            console.debug(`downloadData(..): has API token (${apiToken!.length} chars).`);
+        }
+
+        await Excel.run(async (context: Excel.RequestContext) => {
+            // We need to ensure sheets creation ion the order we want them to appear in the document:
+            const transSheet = await ensureSheetActive(SheetNameTransactions, context);
+            const tagsSheet = await ensureSheetActive(SheetNameTags, context);
+            const catsSheets = await ensureSheetActive(SheetNameCategories, context);
+
+            const syncCtx: SyncContext = {
+                excel: context,
+                syncVersion: currentSyncVersion,
+                sheets: {
+                    trans: transSheet,
+                    tags: tagsSheet,
+                    cats: catsSheets,
+                },
+                tags: {
+                    assignable: new Map<string, Set<string>>(),
+                    groupListFormulaLocations: new Map<string, string>(),
+                    byId: new Map<number, TagInfo>(),
+                },
+            };
+
+            await downloadTags(syncCtx);
+            await downloadCategories(context);
+            await downloadTransactions(startDate, endDate, syncCtx);
+        });
+
+        loadedAppSettings.lastCompletedSyncUtc.value = new Date();
+        loadedAppSettings.lastCompletedSyncVersion.value = currentSyncVersion;
+
+        console.log(`Completed downloadData(..).`);
+    } finally {
+        isSyncInProgress = false;
+    }
 }

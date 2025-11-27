@@ -1,7 +1,7 @@
 /// <reference types="office-js" />
 
 import { errorTypeMessageString, formatDateUtc } from "src/util/format_util";
-import { ensureSheetActive, findTableByNameOnSheet, getRangeBasedOn } from "./excel-util";
+import { findTableByNameOnSheet, getRangeBasedOn } from "./excel-util";
 import type { Transaction, TransactionColumnSpec, TransactionRowData, TransactionRowValue } from "./transaction-tools";
 import {
     getTransactionColumnValue,
@@ -193,20 +193,113 @@ async function applyColumnFormatting(
     );
 }
 
-export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {
-    // Find and activate the Transactions sheet:
-    const tranSheet = await ensureSheetActive(SheetNameTransactions, context.excel);
+function setEditableHintRangeFormat(range: Excel.Range, editableState: "Read-Only" | "Editable") {
+    range.clear();
+    range.format.horizontalAlignment = Excel.HorizontalAlignment.center;
+    range.format.verticalAlignment = Excel.VerticalAlignment.center;
+    range.format.font.size = 10;
 
-    const errorMsgCell = tranSheet.getRange("B4");
-    errorMsgCell.clear();
+    switch (editableState) {
+        case "Read-Only":
+            range.format.fill.color = "#f2ceef";
+            range.format.font.color = "#d76dcc";
+            break;
+        case "Editable":
+            range.format.fill.color = "#b5e6a2";
+            range.format.font.color = "#4ea72e";
+            break;
+    }
+
+    range.dataValidation.prompt = {
+        showPrompt: true,
+        title: `${editableState} column`,
+        message:
+            editableState === "Read-Only"
+                ? "Let Lunch Money manage it for you."
+                : editableState === "Editable"
+                  ? "Select a value from the dropdown"
+                  : "",
+    };
+}
+
+async function printSheetHeaders(context: SyncContext) {
+    context.sheets.trans.getRange("B2").values = [["Transactions"]];
+    context.sheets.trans.getRange("B2:E2").style = "Heading 1";
+
+    const tabRdOnlyMsgRange = context.sheets.trans.getRange("B3:E3");
+    tabRdOnlyMsgRange.clear();
+    tabRdOnlyMsgRange.merge();
+    tabRdOnlyMsgRange.format.horizontalAlignment = Excel.HorizontalAlignment.left;
+    tabRdOnlyMsgRange.format.verticalAlignment = Excel.VerticalAlignment.center;
+    tabRdOnlyMsgRange.format.fill.color = "#fff8dc";
+    tabRdOnlyMsgRange.format.font.color = "d76dcc";
+    tabRdOnlyMsgRange.format.font.size = 10;
+
+    tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by Lunch Master. Only modify specific columns:"]];
+
+    const tabRwAreasDocRange = context.sheets.trans.getRange("B4:B4");
+    setEditableHintRangeFormat(tabRwAreasDocRange, "Editable");
+    tabRwAreasDocRange.format.font.bold = true;
+    tabRwAreasDocRange.values = [["Editable Columns"]];
+
+    const tabRoAreasDocRange = context.sheets.trans.getRange("C4:C4");
+    setEditableHintRangeFormat(tabRoAreasDocRange, "Read-Only");
+    tabRoAreasDocRange.format.font.bold = true;
+    tabRoAreasDocRange.values = [["Read-Only Columns"]];
+
+    await context.excel.sync();
+}
+
+async function createEditableHintHeader(tranTable: Excel.Table, context: SyncContext) {
+    tranTable.columns.load(["count"]);
+    const tranTableRange = tranTable.getRange();
+    tranTableRange.load(["address", "rowIndex", "columnIndex"]);
+    await context.excel.sync();
+
+    const hintRowOffs = { row: tranTableRange.rowIndex - 1, col: tranTableRange.columnIndex };
+
+    // Create Read-Only vs Editable marker row:
+    const editableColumnNames = new Set<string>(["Category"]);
+    for (const gn of context.tags.assignable.keys()) {
+        editableColumnNames.add(formatTagGroupColumnHeader(gn));
+    }
+
+    for (let c = 0; c < tranTable.columns.count; c++) {
+        const tabCol = tranTable.columns.getItemAt(c);
+        tabCol.load(["name"]);
+        await context.excel.sync();
+
+        const colKind = editableColumnNames.has(tabCol.name) ? "Editable" : "Read-Only";
+        const colHintCell = getRangeBasedOn(context.sheets.trans, hintRowOffs, 0, c, 1, 1);
+        setEditableHintRangeFormat(colHintCell, colKind);
+    }
+}
+
+export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {
+    // Activate the sheet:
+    context.sheets.trans.activate();
+    await context.excel.sync();
+
+    // Clear and prepare the location for printing potential errors:
+    const errorMsgBackgroundRange = context.sheets.trans.getRange("B5:F5");
+    errorMsgBackgroundRange.clear();
+    // errorMsgBackgroundRange.merge();
+    // errorMsgBackgroundRange.format.horizontalAlignment = Excel.HorizontalAlignment.left;
+    const errorMsgRange = errorMsgBackgroundRange.getCell(0, 0);
     await context.excel.sync();
 
     try {
+        await printSheetHeaders(context);
+
         const tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec> = createTransactionColumnsSpecs(context);
 
         // Make first (empty) column slim:
-        context.sheets.trans.getRange("A:A").format.columnWidth = 10;
+        context.sheets.trans.getRange("A:A").format.columnWidth = 15;
         await context.excel.sync();
+
+        // if ("Testing errors".length < 100) {
+        //     throw new Error("A test error was thrown. A detailed description of this error should be displayed.");
+        // }
 
         // Is there an existing Transactions table?
         const prevTranTableInfo = await findTableByNameOnSheet(
@@ -218,11 +311,14 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         // If there is no existing table, create an empty one:
         const tranTable =
             prevTranTableInfo === null
-                ? await createNewTranTable(tranColumnsSpecs, tranSheet, context.excel)
+                ? await createNewTranTable(tranColumnsSpecs, context.sheets.trans, context.excel)
                 : prevTranTableInfo.table;
 
         // If the sync context specified columns that were not already present in the table, insert them:
         await insertMissingTagColumns(tranTable, context);
+
+        // Create the RO/RW hints header above the table:
+        await createEditableHintHeader(tranTable, context);
 
         // Load the column names actually present in the table:
         tranTable.columns.load(["count", "items"]);
@@ -457,7 +553,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
             const rowToAdd: (string | boolean | number)[] = [];
             for (const colName of tranTableColNames) {
-                rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs));
+                rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs, context));
             }
             tranRowsToAdd.push(rowToAdd);
         }
@@ -481,8 +577,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         await context.excel.sync();
     } catch (err) {
         console.error(err);
-        errorMsgCell.values = [[`ERR: ${errorTypeMessageString(err)}`]];
-        errorMsgCell.format.font.color = "#FF0000";
+        errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];
+        errorMsgRange.format.font.color = "#FF0000";
         await context.excel.sync();
         throw err;
     }
