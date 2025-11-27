@@ -100,7 +100,7 @@ export async function downloadTags(context: SyncContext) {
             tabRdOnlyMsgRange.format.font.color = "d76dcc";
             tabRdOnlyMsgRange.format.font.size = 10;
 
-            tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by Lunch Master. Do not modify."]];
+            tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by ExpLens. Do not modify."]];
 
             await context.excel.sync();
         }

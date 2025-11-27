@@ -1,8 +1,8 @@
 {
-    "name": "lunch-money-excel-addin.json",
+    "name": "exp-lens-excel-addin",
     "version": "0.0.1",
-    "description": "LunchMoney Excel-AddIn",
-    "productName": "LunchMoney Excel-AddIn",
+    "description": "ExpLens Excel-AddIn",
+    "productName": "ExpLens Excel-AddIn",
     "author": "macrogreg <macrogreg@users.noreply.github.com>",
     "type": "module",
     "private": true,

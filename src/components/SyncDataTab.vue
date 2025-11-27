@@ -161,7 +161,7 @@ function confirmPersistApiTokenDialog(choice: "yes" | "no") {
 }
 
 onMounted(async () => {
-    console.debug("LunchMoney Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
+    console.debug("ExpLens Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
 
     try {
         officeApiEnvInfo.value = await useOffice(true);

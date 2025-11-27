@@ -397,7 +397,7 @@ async function setAllStopValidationRule(
         validation.prompt = {
             showPrompt: true,
             title: "Don't modify!",
-            message: "Lunch Master manages this cell for you.",
+            message: "ExpLens manages this cell for you.",
         };
 
         try {
@@ -415,15 +415,15 @@ async function setAllStopValidationRule(
     }
 
     if (options.useRule) {
-        validation.rule = { custom: { formula: '=("Cell managed by Lunch Master" = "Do not modify!")' } };
+        validation.rule = { custom: { formula: '=("Cell managed by ExpLens" = "Do not modify!")' } };
         validation.ignoreBlanks = false;
 
         validation.errorAlert = {
             showAlert: true,
             style: Excel.DataValidationAlertStyle.warning,
-            title: "Cell protected by Lunch Master: Do not edit!",
+            title: "Cell protected by ExpLens: Do not edit!",
             message:
-                "This cell is managed by Lunch Master." +
+                "This cell is managed by ExpLens." +
                 "\nModifying it MAY break data look-up for other cells." +
                 "\nEven if nothing breaks, the change will NOT sync back to Lunch Money." +
                 "\n" +

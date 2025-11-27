@@ -75,10 +75,10 @@ async function initDocumentSettings() {
     const apiToken = (() => {
         const loadedVal = Office.context.document.settings.get(TokenSettingName);
         if (isNotNullOrWhitespaceStr(loadedVal)) {
-            console.log(`LunchMoney API Token loaded from the document (${loadedVal.length} chars).`);
+            console.log(`ExpLens loaded the LunchMoney API Token from the document (${loadedVal.length} chars).`);
             return loadedVal.toString();
         } else {
-            console.log("LunchMoney API Token was NOT loaded from the document.");
+            console.log("ExpLens could NOT load the LunchMoney API Token from the document.");
             return null;
         }
     })();

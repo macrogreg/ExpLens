@@ -1,6 +1,6 @@
-# LunchMoney Excel-AddIn (lunch-money-excel-addin.json)
+# ExpLens Excel-AddIn (exp-lens-excel-addin)
 
-LunchMoney Excel-AddIn
+ExpLens Excel-AddIn
 
 ## Install the dependencies
 
@@ -41,3 +41,4 @@ quasar build
 ### Customize the configuration
 
 See [Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-js).
+

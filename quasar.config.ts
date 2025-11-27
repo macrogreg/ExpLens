@@ -249,7 +249,7 @@ export default defineConfig((ctx) => {
             builder: {
                 // https://www.electron.build/configuration/configuration
 
-                appId: "lunch-money-excel-addin",
+                appId: "exp-lens-excel-addin",
             },
         },
 

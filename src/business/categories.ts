@@ -285,7 +285,7 @@ export async function downloadCategories(context: Excel.RequestContext) {
             tabRdOnlyMsgRange.format.font.color = "d76dcc";
             tabRdOnlyMsgRange.format.font.size = 10;
 
-            tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by Lunch Master. Do not modify."]];
+            tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by ExpLens. Do not modify."]];
         }
 
         categSheet.getRange("B5").values = [["Leaf Categories"]];

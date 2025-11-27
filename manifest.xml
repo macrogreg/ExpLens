@@ -13,8 +13,8 @@
       <SourceLocation DefaultValue="http://localhost:9000/index.html"/>
       <RequestedWidth>450</RequestedWidth>
     </DefaultSettings>
-    <DisplayName DefaultValue="LunchMoney Excel-AddIn"/>
-    <Description DefaultValue="Synchronize transactions between LunchMoney and Excel."/>
+    <DisplayName DefaultValue="ExpLens Excel-AddIn"/>
+    <Description DefaultValue="Advanced analysis of personal finances (multiple dimensions). Automatically import up to 2 years of bank transactions (via the Lunch Money app)."/>
     <FormSettings></FormSettings>
     <Permissions>ReadWriteDocument</Permissions>
 
@@ -87,14 +87,14 @@
             </bt:Urls>
             <bt:ShortStrings>
                 <bt:String id="GetStarted-Title" DefaultValue="Bank Transactions Sync"/>
-                <bt:String id="TabGroup-Label" DefaultValue="Lunch Money"/>
+                <bt:String id="TabGroup-Label" DefaultValue="ExpLens"/>
                 <bt:String id="ShowPaneButton-Label" DefaultValue="Show Pane"/>
-                <bt:String id="ShowPaneButton-Tip-Title" DefaultValue="Show LunchMoney Task Pane"/>
-                <bt:String id="Taskpain-Title" DefaultValue="Lunch Money"/>
+                <bt:String id="ShowPaneButton-Tip-Title" DefaultValue="Show ExpLens Task Pane"/>
+                <bt:String id="Taskpain-Title" DefaultValue="ExpLens"/>
             </bt:ShortStrings>
             <bt:LongStrings>
-                <bt:String id="ShowPaneButton-Tip-Description" DefaultValue="Click to show the LunchMoney task pane. Synchronize your Bank Transactions from there."/>
-                <bt:String id="GetStarted-Description" DefaultValue="Synchronize Bank Transactions with Lunch Money. To view: [HOME tab] > [Lunch Money] > [Show Pane]."/>                
+                <bt:String id="ShowPaneButton-Tip-Description" DefaultValue="Click to show the ExpLens task pane. Synchronize your Bank Transactions from there."/>
+                <bt:String id="GetStarted-Description" DefaultValue="Analyze your finances. Synchronize Bank Transactions with Lunch Money. To view: [HOME tab] > [ExpLens] > [Show Pane]."/>                
             </bt:LongStrings>
         </Resources>
     </VersionOverrides>

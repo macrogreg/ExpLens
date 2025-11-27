@@ -215,7 +215,7 @@ function setEditableHintRangeFormat(range: Excel.Range, editableState: "Read-Onl
         title: `${editableState} column`,
         message:
             editableState === "Read-Only"
-                ? "Let Lunch Money manage it for you."
+                ? "Let ExpLens manage it for you."
                 : editableState === "Editable"
                   ? "Select a value from the dropdown"
                   : "",
@@ -235,7 +235,7 @@ async function printSheetHeaders(context: SyncContext) {
     tabRdOnlyMsgRange.format.font.color = "d76dcc";
     tabRdOnlyMsgRange.format.font.size = 10;
 
-    tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by Lunch Master. Only modify specific columns:"]];
+    tabRdOnlyMsgRange.getCell(0, 0).values = [["This tab is managed by ExpLens. Only modify specific columns:"]];
 
     const tabRwAreasDocRange = context.sheets.trans.getRange("B4:B4");
     setEditableHintRangeFormat(tabRwAreasDocRange, "Editable");

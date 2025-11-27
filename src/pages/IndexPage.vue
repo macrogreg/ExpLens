@@ -2,7 +2,7 @@
     <q-page class="row justify-center">
         <div class="main-content q-pa-md">
             <div class="title-bar">
-                <h1 class="title-name">LunchMoney Sync</h1>
+                <h1 class="title-name">ExpLens</h1>
                 <div class="title-version">{{ AddInAppVersion }}</div>
                 <img src="/icons/favicon-32x32.png" alt="Logo" class="title-logo" />
             </div>
@@ -31,7 +31,7 @@
 .title-name {
     font-family: "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
     font-weight: 400;
-    font-size: 28px;
+    font-size: 24px;
     line-height: normal;
     margin: 0;
     padding: 5px 0 5px 0;
@@ -39,7 +39,7 @@
 .title-version {
     font-family: "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
     font-weight: 300;
-    font-size: 12px;
+    font-size: 11px;
     margin-left: 10px;
     align-self: flex-end;
     padding-bottom: 5px;
@@ -61,7 +61,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 
-console.debug("LunchMoney Excel-AddIn: Loading IndexPage...");
+console.debug("ExpLens Excel-AddIn: Loading IndexPage...");
 
 onMounted(async () => {});
 import SyncDataTab from "components/SyncDataTab.vue";
