@@ -9,7 +9,6 @@ export interface Transaction {
     trn: Lunch.Transaction;
     pld: Lunch.PlaidMetadata | null;
     tag: TagValuesCollection;
-    grpMoniker: string;
     id: number;
 }
 
@@ -87,7 +86,28 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
 
     transColumn("recurring_description", (t) => t.trn.recurring_description),
 
-    transColumn("GroupMoniker", (t) => t.grpMoniker),
+    transColumn(
+        "ContainerMoniker",
+        (_) =>
+            `=LET(
+    ContainerId, IFS(
+        [@[group_id]] <> "", [@[group_id]],
+        [@[parent_id]] <> "", [@[parent_id]],
+        TRUE, ""
+    ),
+    ContainerPayee, XLOOKUP(ContainerId, [LunchId], [payee], ""),
+    ContainerMoniker, IF(ContainerPayee <> "",
+        ContainerPayee,
+        IFS(
+            AND(--[@[is_group]], --[@[has_children]]), "[_IS_GROUP_HAS_CHILDREN_]",
+            [@[is_group]], "[_IS_GROUP_]",
+            [@[has_children]], "[_HAS_CHILDREN_]",
+            TRUE, ""
+        )
+    ),
+    ContainerMoniker
+)`
+    ),
 
     transColumn("is_income", (t) => t.trn.is_income),
     transColumn("exclude_from_budget", (t) => t.trn.exclude_from_budget),

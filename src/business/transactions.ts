@@ -12,6 +12,7 @@ import {
     formatTagGroupColumnHeader,
 } from "./transaction-tools";
 import { isNullOrWhitespace } from "src/util/string_util";
+import type { TagValuesCollection } from "./tags";
 import { parseTag } from "./tags";
 import { authorizedFetch } from "./fetch-tools";
 import type * as Lunch from "./lunchmoney-types";
@@ -446,9 +447,6 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         // Fetch transactions:
 
-        // Fetch Transactions from the Cloud:
-        //
-
         console.log("Will fetch transactions from Lunch Money...");
         const msStartFetchTransactions = performance.now();
 
@@ -496,7 +494,6 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 trn: fetchedTran,
                 pld: null,
                 tag: new Map<string, Set<string>>(),
-                grpMoniker: "",
                 id: fetchedTranId,
             };
 
@@ -533,7 +530,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         // Parse Tags for all transactions:
 
-        const allReceivedTags = new Map<string, Set<string>>();
+        const allReceivedTags: TagValuesCollection = new Map<string, Set<string>>();
 
         for (let t = 0; t < receivedTrans.length; t++) {
             const tran = receivedTrans.getByIndex(t);
