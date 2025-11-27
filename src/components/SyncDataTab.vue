@@ -68,7 +68,14 @@
             </div>
         </div>
 
-        <q-btn label="Download" color="primary" @click="validateAndDownload" class="q-mt-md" />
+        <q-btn
+            label="Download"
+            :loading="0 <= syncOperationProgressPercentage && syncOperationProgressPercentage < 100"
+            :percentage="syncOperationProgressPercentage"
+            color="primary"
+            @click="validateAndDownload"
+            class="q-mt-md"
+        />
     </div>
 
     <q-dialog v-model="showPersistApiTokenDialog" persistent>
@@ -207,6 +214,7 @@ function getDefaultSyncStartDate(today: Date) {
     }
 }
 
+const syncOperationProgressPercentage = ref<number>(-1);
 const syncStartDate = ref(getDefaultSyncStartDate(now));
 const syncEndDate = ref(formatDateLocal(now));
 const syncStartDateError = ref("");
@@ -263,6 +271,11 @@ async function validateAndDownload() {
         console.error("Error setting or storing API token.", err);
     }
 
-    await downloadData(startDate, endDate, true);
+    try {
+        syncOperationProgressPercentage.value = 0;
+        await downloadData(startDate, endDate, true, syncOperationProgressPercentage);
+    } finally {
+        syncOperationProgressPercentage.value = -1;
+    }
 }
 </script>

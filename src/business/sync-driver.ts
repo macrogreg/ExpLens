@@ -8,10 +8,12 @@ import { downloadTags, SheetNameTags, type TagValuesCollection } from "./tags";
 import { downloadCategories, SheetNameCategories } from "./categories";
 import { downloadTransactions, SheetNameTransactions } from "./transactions";
 import { ensureSheetActive } from "./excel-util";
+import type { Ref } from "vue";
 
 export type SyncContext = {
     excel: Excel.RequestContext;
     syncVersion: number;
+    progressPercentage: Ref<number>;
     sheets: {
         tags: Excel.Worksheet;
         cats: Excel.Worksheet;
@@ -29,7 +31,8 @@ let isSyncInProgress = false;
 export async function downloadData(
     startDate: Date,
     endDate: Date,
-    replaceExistingTransactions: boolean
+    replaceExistingTransactions: boolean,
+    syncOperationProgressPercentage: Ref<number>
 ): Promise<void> {
     if (isSyncInProgress === true) {
         throw new Error("Cannot star data download, because data sync is already in progress.");
@@ -65,6 +68,7 @@ export async function downloadData(
             const syncCtx: SyncContext = {
                 excel: context,
                 syncVersion: currentSyncVersion,
+                progressPercentage: syncOperationProgressPercentage,
                 sheets: {
                     trans: transSheet,
                     tags: tagsSheet,
@@ -87,6 +91,7 @@ export async function downloadData(
 
         console.log(`Completed downloadData(..).`);
     } finally {
+        syncOperationProgressPercentage.value = 100;
         isSyncInProgress = false;
     }
 }

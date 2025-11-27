@@ -275,7 +275,20 @@ async function createEditableHintHeader(tranTable: Excel.Table, context: SyncCon
     }
 }
 
+function setSheetProgressPercentage(currentSheetRelativeProgressPercentage: number, context: SyncContext) {
+    const currentSheetStartProgress = 31;
+    const currentSheetEndProgress = 90;
+
+    const sheetProgressRange = currentSheetEndProgress - currentSheetStartProgress;
+    const totalProgress =
+        currentSheetStartProgress + (sheetProgressRange / 100.0) * currentSheetRelativeProgressPercentage;
+
+    context.progressPercentage.value = totalProgress;
+}
+
 export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {
+    setSheetProgressPercentage(0, context);
+
     // Activate the sheet:
     context.sheets.trans.activate();
     await context.excel.sync();
@@ -289,6 +302,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
     await context.excel.sync();
 
     try {
+        setSheetProgressPercentage(5, context);
         await printSheetHeaders(context);
 
         const tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec> = createTransactionColumnsSpecs(context);
@@ -347,6 +361,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             );
         }
 
+        setSheetProgressPercentage(10, context);
+
         // Load the values from the table so that empty rows can be found and deleted:
         const tranTableBodyRange = tranTable.getDataBodyRange();
         tranTable.rows.load(["count"]);
@@ -374,6 +390,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         tranTable.rows.load(["count", "items"]);
         await context.excel.sync();
         console.debug(`Deleted ${countEmptyRowsDeleted} empty rows from table '${tranTable.name}'.`);
+
+        setSheetProgressPercentage(15, context);
 
         // Load data from the table into `existingTrans`:
 
@@ -424,6 +442,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 `\n    Time taken: ${performance.now() - msStartReadPreexistingData} msec.`
         );
 
+        setSheetProgressPercentage(30, context);
+
         // Fetch transactions:
 
         // Fetch Transactions from the Cloud:
@@ -442,6 +462,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         console.log(`Transactions fetched.\n    Time taken: ${performance.now() - msStartFetchTransactions} msec.`);
 
+        setSheetProgressPercentage(45, context);
+
         // Parse fetched Transactions:
         const fetched: { transactions: Lunch.Transaction[]; has_more: boolean } = JSON.parse(fetchedResponseText);
         console.log("Transactions parsed. Length:", fetched.transactions.length, "Has_more:", fetched.has_more);
@@ -450,6 +472,9 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         if (fetched.has_more) {
             console.error("There are more transactions to fetch, but this is not yet supported!");
         }
+
+        setSheetProgressPercentage(50, context);
+
         const receivedTrans = new IndexedMap<number, Transaction>();
 
         // Parsed Plaid data for each transaction:
@@ -504,6 +529,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 " imported form sources other than Plaid.)"
         );
 
+        setSheetProgressPercentage(55, context);
+
         // Parse Tags for all transactions:
 
         const allReceivedTags = new Map<string, Set<string>>();
@@ -537,6 +564,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         console.log(`Received transactions contains tags from ${allReceivedTags.size} different groups.`);
 
+        setSheetProgressPercentage(60, context);
+
         // To do: Resolve group names.
 
         // Create rows to add:
@@ -563,18 +592,26 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 ` and ${countExistingTransDetected} existing items.`
         );
 
+        setSheetProgressPercentage(70, context);
+
         tranTable.rows.load(["items", "count"]);
         if (tranRowsToAdd.length > 0) {
             tranTable.rows.add(0, tranRowsToAdd);
             await context.excel.sync();
         }
 
+        setSheetProgressPercentage(80, context);
+
         // Apply formatting to all columns and rows:
         await applyColumnFormatting(tranTable, tranColumnsSpecs, context);
+
+        setSheetProgressPercentage(90, context);
 
         // Auto-fit the table:
         tranTable.getRange().format.autofitColumns();
         await context.excel.sync();
+
+        setSheetProgressPercentage(100, context);
     } catch (err) {
         console.error(err);
         errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];

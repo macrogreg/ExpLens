@@ -66,7 +66,20 @@ export function createTagGroupHeader(groupName: string | null) {
     return `Tag:${groupName ?? UngroupedTagMoniker}`;
 }
 
+function setSheetProgressPercentage(currentSheetRelativeProgressPercentage: number, context: SyncContext) {
+    const currentSheetStartProgress = 3;
+    const currentSheetEndProgress = 15;
+
+    const sheetProgressRange = currentSheetEndProgress - currentSheetStartProgress;
+    const totalProgress =
+        currentSheetStartProgress + (sheetProgressRange / 100.0) * currentSheetRelativeProgressPercentage;
+
+    context.progressPercentage.value = totalProgress;
+}
+
 export async function downloadTags(context: SyncContext) {
+    setSheetProgressPercentage(0, context);
+
     // Activate the sheet:
     context.sheets.tags.activate();
     await context.excel.sync();
@@ -80,6 +93,8 @@ export async function downloadTags(context: SyncContext) {
     await context.excel.sync();
 
     try {
+        setSheetProgressPercentage(5, context);
+
         // Tags table spec:
         const tagsTableOffs = { row: 7, col: 1 };
         const tagsTableHead_Grp = "Structured:Group";
@@ -105,6 +120,8 @@ export async function downloadTags(context: SyncContext) {
             await context.excel.sync();
         }
 
+        setSheetProgressPercentage(10, context);
+
         // Fetch Tags from the Cloud:
         const fetchedResponseText = await authorizedFetch("GET", "tags", "get all tags");
 
@@ -114,6 +131,8 @@ export async function downloadTags(context: SyncContext) {
 
         // Parse fetched Tags:
         const parsedTags: Tag[] = JSON.parse(fetchedResponseText);
+
+        setSheetProgressPercentage(50, context);
 
         // Preliminary table area header (final version after autofit, so that the header does not stretch its column):
         getRangeBasedOn(context.sheets.tags, tagsTableOffs, -3, 0, 1, 1).values = [["Tags"]];
@@ -196,6 +215,8 @@ export async function downloadTags(context: SyncContext) {
         countTagsFormulaRange.formulas = [[`="  " & COUNTA(${TableNameTags}[name])`]];
         await context.excel.sync();
 
+        setSheetProgressPercentage(60, context);
+
         // Process fetched tags and populate table:
         context.tags.assignable.clear();
         context.tags.groupListFormulaLocations.clear();
@@ -237,6 +258,8 @@ export async function downloadTags(context: SyncContext) {
 
         console.log(`Tags table has ${tagsTable.rows.count} rows after the refresh.`);
 
+        setSheetProgressPercentage(75, context);
+
         // Now, we build the Tag Groups Table.
 
         const tagGroupsTableOffs = {
@@ -261,6 +284,8 @@ export async function downloadTags(context: SyncContext) {
             existingTagGroupsTable.table.delete();
             await context.excel.sync();
         }
+
+        setSheetProgressPercentage(85, context);
 
         // Print data about the Tag Groups:
         const tagGroupNames = getTagGroups(context.tags.assignable);
@@ -322,6 +347,8 @@ export async function downloadTags(context: SyncContext) {
             await context.excel.sync();
         }
 
+        setSheetProgressPercentage(95, context);
+
         // Frame the printed Tag Group Item Count data with a table:
         const tagGroupsTable = context.sheets.tags.tables.add(
             getRangeBasedOn(context.sheets.tags, tagGroupsTableOffs, 0, 0, 2, tagGroupNames.length),
@@ -331,6 +358,8 @@ export async function downloadTags(context: SyncContext) {
         tagGroupsTable.style = "TableStyleMedium10"; // e.g."TableStyleMedium2", "TableStyleDark1", "TableStyleLight9" ...
         await context.excel.sync();
         console.debug(`New Tags Groups table '${TableNameTagGroups}' created.`);
+
+        setSheetProgressPercentage(100, context);
     } catch (err) {
         console.error(err);
         errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];
