@@ -5,7 +5,7 @@ import { findTableByNameOnSheet, getRangeBasedOn } from "./excel-util";
 import type { Transaction, TransactionColumnSpec, TransactionRowData, TransactionRowValue } from "./transaction-tools";
 import {
     getTransactionColumnValue,
-    LunchIdColumnName,
+    SpecialColumnNames,
     createTransactionColumnsSpecs,
     tryGetTagGroupFromColumnName,
     getTagColumnsPosition,
@@ -360,10 +360,10 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         const tranTableColNames: string[] = tranTable.columns.items.map((col) => col.name.trim());
 
         // Ensure the ID column exists:
-        if (!tranTableColNames.includes(LunchIdColumnName)) {
+        if (!tranTableColNames.includes(SpecialColumnNames.LunchId)) {
             throw new Error(
                 `Table '${tranTable.name}' (${prevTranTableInfo === null ? "newly created" : "pre-existing"})` +
-                    ` does not contain the expected column '${LunchIdColumnName}'.`
+                    ` does not contain the expected column '${SpecialColumnNames.LunchId}'.`
             );
         }
 
@@ -437,13 +437,15 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
             if (!isEmptyRow) {
                 // Add the object to the loaded collection by ID and by order:
-                const lunchIdStr = rowDataValues[LunchIdColumnName];
+                const lunchIdStr = rowDataValues[SpecialColumnNames.LunchId];
                 if (!lunchIdStr) {
-                    throw new Error(`${LunchIdColumnName} not specified for item on row ${r}.`);
+                    throw new Error(`${SpecialColumnNames.LunchId} not specified for item on row ${r}.`);
                 }
                 const lunchId = Number(lunchIdStr);
                 if (!Number.isInteger(lunchId)) {
-                    throw new Error(`Invalid ${LunchIdColumnName}-value ('${lunchIdStr}') for item on row ${r}.`);
+                    throw new Error(
+                        `Invalid ${SpecialColumnNames.LunchId}-value ('${lunchIdStr}') for item on row ${r}.`
+                    );
                 }
 
                 const rowInfo = { values: rowDataValues, range: rowRange };
@@ -576,39 +578,102 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         setSheetProgressPercentage(60, context);
 
-        // To do: Resolve group names.
+        // Go over downloaded transactions.
+        //   In update mode, update existing transactions;
+        //   Prepare data for insertion for new transactions;
 
-        // Create rows to add:
-
-        // Todo: deal with already existing data.
-
-        const tranRowsToAdd: (string | boolean | number)[][] = [];
-        let countExistingTransDetected = 0;
-        for (const tran of receivedTrans) {
-            if (existingTrans.has(tran.id)) {
-                countExistingTransDetected++;
-                continue;
-            }
-
+        const createTransactionDataRow = (tran: Transaction): (string | boolean | number)[] => {
             const rowToAdd: (string | boolean | number)[] = [];
             for (const colName of tranTableColNames) {
                 rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs, context));
             }
+            return rowToAdd;
+        };
+
+        const tranRowsToAdd: (string | boolean | number)[][] = [];
+        let countExistingTransDetected = 0;
+        for (const tran of receivedTrans) {
+            // If Transaction already in table (existing):
+            const exTran = existingTrans.getByKey(tran.id);
+            if (exTran !== undefined) {
+                countExistingTransDetected++;
+
+                // Ony update existing transaction if in update mode:
+                if (context.isReplaceExistingTransactions) {
+                    exTran.range.values = [createTransactionDataRow(tran)];
+                }
+
+                continue;
+            }
+
+            // Create transaction data row:
+            const rowToAdd = createTransactionDataRow(tran);
+
+            // Add the transaction data row to the list of rows to add:
             tranRowsToAdd.push(rowToAdd);
         }
 
         console.log(
             `${receivedTrans.length} received transactions include ${tranRowsToAdd.length} new items` +
-                ` and ${countExistingTransDetected} existing items.`
+                ` and ${countExistingTransDetected} existing items.` +
+                context.isReplaceExistingTransactions
+                ? " New transaction were inserted, and existing ones were updated."
+                : " New transaction were inserted, existing ones were NOT updated."
         );
 
-        setSheetProgressPercentage(70, context);
+        setSheetProgressPercentage(67, context);
 
+        // Insert new transaction rows:
         tranTable.rows.load(["items", "count"]);
         if (tranRowsToAdd.length > 0) {
             tranTable.rows.add(0, tranRowsToAdd);
             await context.excel.sync();
         }
+
+        setSheetProgressPercentage(75, context);
+
+        // Sort the table:
+
+        const sortFields: Excel.SortField[] = [
+            {
+                key: tranTableColNames.findIndex((cn) => cn === "date"),
+                sortOn: Excel.SortOn.value,
+                ascending: false,
+            },
+            {
+                key: tranTableColNames.findIndex((cn) => cn === "plaid:authorized_datetime"),
+                sortOn: Excel.SortOn.value,
+                ascending: false,
+            },
+            {
+                key: tranTableColNames.findIndex((cn) => cn === "Account"),
+                sortOn: Excel.SortOn.value,
+                ascending: true,
+            },
+            {
+                key: tranTableColNames.findIndex((cn) => cn === "Payer"),
+                sortOn: Excel.SortOn.value,
+                ascending: true,
+            },
+            {
+                key: tranTableColNames.findIndex((cn) => cn === "payee"),
+                sortOn: Excel.SortOn.value,
+                ascending: true,
+            },
+            {
+                key: tranTableColNames.findIndex((cn) => cn === "plaid:datetime"),
+                sortOn: Excel.SortOn.value,
+                ascending: false,
+            },
+            {
+                key: tranTableColNames.findIndex((cn) => cn === "SpecialColumnNames.LunchId"),
+                sortOn: Excel.SortOn.value,
+                ascending: true,
+            },
+        ].filter((f) => f.key >= 0);
+
+        tranTable.sort.apply(sortFields);
+        await context.excel.sync();
 
         setSheetProgressPercentage(80, context);
 

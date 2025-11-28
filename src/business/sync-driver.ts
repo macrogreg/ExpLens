@@ -13,6 +13,7 @@ import type { Ref } from "vue";
 export type SyncContext = {
     excel: Excel.RequestContext;
     syncVersion: number;
+    isReplaceExistingTransactions: boolean;
     progressPercentage: Ref<number>;
     sheets: {
         tags: Excel.Worksheet;
@@ -68,6 +69,7 @@ export async function downloadData(
             const syncCtx: SyncContext = {
                 excel: context,
                 syncVersion: currentSyncVersion,
+                isReplaceExistingTransactions: replaceExistingTransactions,
                 progressPercentage: syncOperationProgressPercentage,
                 sheets: {
                     trans: transSheet,

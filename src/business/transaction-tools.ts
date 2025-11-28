@@ -15,7 +15,9 @@ export interface Transaction {
 const TagColumnsPlaceholder = "<Tag Groups Columns>";
 const TagGroupColumnNamePrefix = `Tag${TagGroupSeparator}`;
 
-export const LunchIdColumnName = "LunchId";
+export const SpecialColumnNames = {
+    LunchId: "LunchId",
+};
 
 const AccountingWithMinusFormatStr = `_($* #,##0.00_);_($* -#,##0.00_);_($* "-"??_);_(@_)`;
 
@@ -232,7 +234,7 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("plaid:website", (t) => t.pld?.website),
 
     transColumn(
-        LunchIdColumnName,
+        SpecialColumnNames.LunchId,
         (t) => t.trn.id,
         null,
         (format) => {
@@ -243,6 +245,8 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
     ),
 
     transColumn("plaid:website", (t) => t.pld?.website),
+
+    transColumn("LastSyncVersion", (_, ctx) => ctx.syncVersion),
 ];
 
 function transColumn(
