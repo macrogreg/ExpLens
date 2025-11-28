@@ -17,11 +17,12 @@ const TagGroupColumnNamePrefix = `Tag${TagGroupSeparator}`;
 
 export const SpecialColumnNames = {
     LunchId: "LunchId",
+    LastSyncVersion: "LastSyncVersion",
 };
 
 const AccountingWithMinusFormatStr = `_($* #,##0.00_);_($* -#,##0.00_);_($* "-"??_);_(@_)`;
 
-type ValueExtractor = (trans: Transaction, context: SyncContext) => string | boolean | number | null | undefined;
+type ValueExtractor = (trans: Transaction) => string | boolean | number | null | undefined;
 
 type TransactionColumnFormatter = (
     format: Excel.RangeFormat,
@@ -141,13 +142,13 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("recurring_granularity", (t) => t.trn.recurring_granularity),
     transColumn("recurring_quantity", (t) => t.trn.recurring_quantity),
     transColumn("recurring_type", (t) => t.trn.recurring_type),
-    transColumn("recurring_amount", (t) => t.trn.recurring_amount),
+    transColumn("recurring_amount", (t) => t.trn.recurring_amount, AccountingWithMinusFormatStr),
     transColumn("recurring_currency", (t) => t.trn.recurring_currency),
     transColumn("parent_id", (t) => t.trn.parent_id),
 
     transColumn("group_id", (t) => t.trn.group_id),
 
-    transColumn("_amount", (t) => t.trn.amount),
+    transColumn("_amount", (t) => t.trn.amount, AccountingWithMinusFormatStr),
     transColumn("AccountWithOwner", (t) => JJ(t.trn.account_display_name, t.pld?.account_owner)),
 
     transColumn("asset_id", (t) => t.trn.asset_id),
@@ -177,9 +178,9 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
 
     transColumn("plaid:account_id", (t) => t.pld?.account_id),
     transColumn("plaid:account_owner", (t) => t.pld?.account_owner),
-    transColumn("plaid:amount", (t) => t.pld?.amount),
-    transColumn("plaid:authorized_date", (t) => t.pld?.authorized_date),
-    transColumn("plaid:authorized_datetime", (t) => t.pld?.authorized_datetime),
+    transColumn("plaid:amount", (t) => t.pld?.amount, AccountingWithMinusFormatStr),
+    transColumn("plaid:authorized_date", (t) => timeStrToExcel(t.pld?.authorized_date), "yyyy-mm-dd"),
+    transColumn("plaid:authorized_datetime", (t) => timeStrToExcel(t.pld?.authorized_datetime), "yyyy-mm-dd hh:mm:ss"),
     transColumn("plaid:category,l1", (t) => t.pld?.category?.[0]),
     transColumn("plaid:category,l2", (t) => J([t.pld?.category?.[0], t.pld?.category?.[1]])),
     transColumn("plaid:category,l3", (t) => J([t.pld?.category?.[0], t.pld?.category?.[1], t.pld?.category?.[2]])),
@@ -193,8 +194,8 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("plaid:counterparty#01.phone_number", (t) => t.pld?.counterparties?.[0]?.phone_number),
     transColumn("plaid:counterparty#01.type", (t) => t.pld?.counterparties?.[0]?.type),
     transColumn("plaid:counterparty#01.website", (t) => t.pld?.counterparties?.[0]?.website),
-    transColumn("plaid:date", (t) => t.pld?.date),
-    transColumn("plaid:datetime", (t) => t.pld?.datetime),
+    transColumn("plaid:date", (t) => timeStrToExcel(t.pld?.date), "yyyy-mm-dd"),
+    transColumn("plaid:datetime", (t) => timeStrToExcel(t.pld?.datetime), "yyyy-mm-dd hh:mm:ss"),
     transColumn("plaid:iso_currency_code", (t) => t.pld?.iso_currency_code),
     transColumn("plaid:location.address", (t) => t.pld?.location?.address),
     transColumn("plaid:location.city", (t) => t.pld?.location?.city),
@@ -246,7 +247,7 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
 
     transColumn("plaid:website", (t) => t.pld?.website),
 
-    transColumn("LastSyncVersion", (_, ctx) => ctx.syncVersion),
+    transColumn(SpecialColumnNames.LastSyncVersion, (_) => null),
 ];
 
 function transColumn(
@@ -362,14 +363,13 @@ export type TransactionRowData = {
 export function getTransactionColumnValue(
     tran: Transaction,
     colName: string,
-    columnSpecs: IndexedMap<string, TransactionColumnSpec>,
-    context: SyncContext
+    columnSpecs: IndexedMap<string, TransactionColumnSpec>
 ): string | boolean | number {
     const colSpec = columnSpecs.getByKey(colName);
 
     let value;
     if (colSpec !== undefined) {
-        value = colSpec.valueFn(tran, context);
+        value = colSpec.valueFn(tran);
     } else {
         const tagGroupName = tryGetTagGroupFromColumnName(colName);
         if (tagGroupName !== undefined) {

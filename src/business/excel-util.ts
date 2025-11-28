@@ -97,20 +97,33 @@ export async function ensureSheetActive(
     return sheet;
 }
 
-export function timeStrToExcel(datetimeStr: string): number {
-    const dt = new Date(datetimeStr);
+export function timeStrToExcel(datetimeStr: string | undefined | null): number | undefined | null {
+    if (datetimeStr === undefined) {
+        return undefined;
+    }
 
-    if (isNaN(dt.getTime())) {
+    if (datetimeStr === null) {
+        return null;
+    }
+
+    const dt = new Date(datetimeStr);
+    const dtMillis = dt.getTime();
+
+    if (isNaN(dtMillis)) {
         throw new Error(`Invalid date string '${datetimeStr}'.`);
     }
 
     // Excel epoch (1900 system): 1899-12-30
-    const excelEpoch = Math.abs(Date.UTC(1899, 11, 30));
+    const excelEpochMillis = Math.abs(Date.UTC(1899, 11, 30));
 
-    const msecPerDay = 24 * 60 * 60 * 1000;
+    const msecPerDay = 24 * 60 * 60 * 1000; // 86,400,000
 
     // Convert JS ms → Excel days
-    return (dt.getTime() + excelEpoch) / msecPerDay;
+    const excelTS = (dtMillis + excelEpochMillis) / msecPerDay;
+
+    // Round to avoid precision issues:
+    const f = 10 ** 8;
+    return Math.round(excelTS * f) / f;
 }
 
 export function getRangeBasedOn(

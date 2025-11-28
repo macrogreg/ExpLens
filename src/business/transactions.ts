@@ -543,7 +543,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         setSheetProgressPercentage(55, context);
 
-        // Parse Tags for all transactions:
+        // Parse Tags for all received transactions:
 
         const allReceivedTags: TagValuesCollection = new Map<string, Set<string>>();
 
@@ -553,7 +553,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 continue;
             }
 
-            // For each tag of this transaction:
+            // For each tag of this transaction, and add it to the tag values collections:
             const tags: { name: string; id: number }[] = tran.trn.tags;
             for (const tag of tags) {
                 // Parse the tag:
@@ -578,47 +578,108 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         setSheetProgressPercentage(60, context);
 
-        // Go over downloaded transactions.
-        //   In update mode, update existing transactions;
-        //   Prepare data for insertion for new transactions;
+        // Go over downloaded transactions and decide what to do with Each:
+        // - Existing transitions:
+        //   - In No-Update mode: Just Skip;
+        //   - In Update mode:
+        //     Loop over each property of Existing, compare with Received; If different - track for update;
+        //     If any differences found: Update table right away;
+        // - New transactions:
+        //   Create new data row for insertion;
+        // Finally, insert all newly create rows into the table.
 
-        const createTransactionDataRow = (tran: Transaction): (string | boolean | number)[] => {
-            const rowToAdd: (string | boolean | number)[] = [];
-            for (const colName of tranTableColNames) {
-                rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs, context));
-            }
-            return rowToAdd;
-        };
+        const colIndexLastSyncVersion = tranTableColNames.findIndex((cn) => cn === SpecialColumnNames.LastSyncVersion);
 
         const tranRowsToAdd: (string | boolean | number)[][] = [];
-        let countExistingTransDetected = 0;
+        const countExistingTransDetected = {
+            sameAsReceived: 0,
+            differentFromReceived: 0,
+            notComparedWithReceived: 0,
+        };
+
         for (const tran of receivedTrans) {
             // If Transaction already in table (existing):
             const exTran = existingTrans.getByKey(tran.id);
             if (exTran !== undefined) {
-                countExistingTransDetected++;
-
-                // Ony update existing transaction if in update mode:
-                if (context.isReplaceExistingTransactions) {
-                    exTran.range.values = [createTransactionDataRow(tran)];
+                // If replacing existing transitions is NOT required, just skip it:
+                if (!context.isReplaceExistingTransactions) {
+                    countExistingTransDetected.notComparedWithReceived++;
+                    continue;
                 }
 
-                continue;
+                // Replacing the existing transitions is IS required. So:
+                // Loop over the existing data and compare it with received data:
+                exTran.range.load(["formulas"]);
+                await context.excel.sync();
+                const tranDataVals = exTran.range.values[0]!;
+                const tranFormulas = exTran.range.formulas[0]!;
+                let needsUpdating = false;
+                for (let c = 0; c < tranDataVals.length; c++) {
+                    // Skip the sync version column, as it is always different:
+                    if (c === colIndexLastSyncVersion) {
+                        continue;
+                    }
+
+                    // Check whether received data is different, and if so - track for update:
+                    const colName = tranTableColNames[c]!;
+                    const existingColVal = tranDataVals[c];
+                    const receivedColVal = getTransactionColumnValue(tran, colName, tranColumnsSpecs);
+                    if (existingColVal !== receivedColVal) {
+                        if (
+                            typeof existingColVal === "number" &&
+                            typeof receivedColVal === "string" &&
+                            Number(receivedColVal.trim()) === existingColVal
+                        ) {
+                            // Excel eagerly converts strings to numbers.
+                            // If after that conversions, values match, we consider them Equal.
+                        } else if (tranFormulas[c] === receivedColVal) {
+                            // The existing value doesn't match, but the formula does.
+                            // No need to update, but we still copy the formula
+                            // in case we detect the need to update based on another column:
+                            tranDataVals[c] = tranFormulas[c];
+                        } else {
+                            // NO match for either column or formula. Track for UPDATE:
+                            tranDataVals[c] = receivedColVal;
+                            needsUpdating = true;
+                        }
+                    }
+                }
+
+                // If the received data is different, update the transaction row:
+                if (needsUpdating) {
+                    tranDataVals[colIndexLastSyncVersion] = context.syncVersion;
+                    exTran.range.values = [tranDataVals];
+                    countExistingTransDetected.differentFromReceived++;
+                    await context.excel.sync();
+                } else {
+                    countExistingTransDetected.sameAsReceived++;
+                }
+            } else {
+                // The `exTran` is undefined, i.e. received `tran` is new.
+                // Initialize a new data row based on the received transaction:
+                const rowToAdd: (string | boolean | number)[] = [];
+
+                for (const colName of tranTableColNames) {
+                    if (colName === SpecialColumnNames.LastSyncVersion) {
+                        rowToAdd.push(context.syncVersion);
+                    } else {
+                        rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs));
+                    }
+                }
+
+                // Add the transaction data row to the list of rows to add:
+                tranRowsToAdd.push(rowToAdd);
             }
-
-            // Create transaction data row:
-            const rowToAdd = createTransactionDataRow(tran);
-
-            // Add the transaction data row to the list of rows to add:
-            tranRowsToAdd.push(rowToAdd);
         }
 
         console.log(
-            `${receivedTrans.length} received transactions include ${tranRowsToAdd.length} new items` +
-                ` and ${countExistingTransDetected} existing items.` +
-                context.isReplaceExistingTransactions
-                ? " New transaction were inserted, and existing ones were updated."
-                : " New transaction were inserted, existing ones were NOT updated."
+            `${receivedTrans.length} received transactions were processed.`,
+            "context.isReplaceExistingTransactions: ",
+            context.isReplaceExistingTransactions,
+            "countExistingTransDetected: ",
+            countExistingTransDetected,
+            "tranRowsToAdd.length: ",
+            tranRowsToAdd.length
         );
 
         setSheetProgressPercentage(67, context);
