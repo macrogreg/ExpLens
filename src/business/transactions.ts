@@ -335,6 +335,19 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         // Create the RO/RW hints header above the table:
         await createEditableHintHeader(tranTable, context);
 
+        // Freeze table head:
+        {
+            context.sheets.trans.freezePanes.unfreeze();
+            await context.excel.sync();
+
+            const tranTableHeaderRange = tranTable.getHeaderRowRange();
+            tranTableHeaderRange.load(["rowIndex"]);
+            await context.excel.sync();
+
+            context.sheets.trans.freezePanes.freezeRows(tranTableHeaderRange.rowIndex + 1);
+            await context.excel.sync();
+        }
+
         // Load the column names actually present in the table:
         tranTable.columns.load(["count", "items"]);
         await context.excel.sync();
