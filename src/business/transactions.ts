@@ -1,7 +1,7 @@
 /// <reference types="office-js" />
 
 import { errorTypeMessageString, formatDateUtc } from "src/util/format_util";
-import { findTableByNameOnSheet, getRangeBasedOn } from "./excel-util";
+import { datetimeToExcel, findTableByNameOnSheet, getRangeBasedOn } from "./excel-util";
 import type { Transaction, TransactionColumnSpec, TransactionRowData, TransactionRowValue } from "./transaction-tools";
 import {
     getTransactionColumnValue,
@@ -274,6 +274,59 @@ async function createEditableHintHeader(tranTable: Excel.Table, context: SyncCon
         const colHintCell = getRangeBasedOn(context.sheets.trans, hintRowOffs, 0, c, 1, 1);
         setEditableHintRangeFormat(colHintCell, colKind);
     }
+}
+
+async function createInfoRow(tranTable: Excel.Table, context: SyncContext) {
+    const tranTableRange = tranTable.getRange();
+    tranTableRange.load(["address", "rowIndex", "columnIndex", "name"]);
+    await context.excel.sync();
+
+    const infoRowOffs = { row: tranTableRange.rowIndex - 2, col: tranTableRange.columnIndex };
+
+    // Count:
+    const countTransLabelRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 0, 1, 1);
+    countTransLabelRange.format.fill.clear();
+    countTransLabelRange.format.font.color = "#7e350e";
+    countTransLabelRange.format.font.bold = true;
+    countTransLabelRange.format.horizontalAlignment = "Right";
+    countTransLabelRange.values = [["Count:"]];
+
+    const countTransFormulaRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 1, 1, 1);
+    countTransFormulaRange.format.fill.color = "#f2f2f2";
+    countTransFormulaRange.format.font.color = "#7e350e";
+    countTransFormulaRange.format.font.bold = true;
+    countTransFormulaRange.format.horizontalAlignment = "Left";
+    countTransFormulaRange.formulas = [[`="  " & COUNTA(${tranTable.name}[${SpecialColumnNames.LunchId}])`]];
+
+    // Last successful sync:
+    const lastCompletedSyncLabelRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 3, 1, 1);
+    lastCompletedSyncLabelRange.format.fill.clear();
+    lastCompletedSyncLabelRange.format.font.color = "#7e350e";
+    lastCompletedSyncLabelRange.format.font.bold = true;
+    lastCompletedSyncLabelRange.format.horizontalAlignment = "Right";
+    lastCompletedSyncLabelRange.values = [["Last completed download data version / time:"]];
+
+    const lastCompletedSyncVersionRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 4, 1, 1);
+    lastCompletedSyncVersionRange.format.fill.color = "#f2f2f2";
+    lastCompletedSyncVersionRange.format.font.color = "#7e350e";
+    lastCompletedSyncVersionRange.format.font.bold = true;
+    lastCompletedSyncVersionRange.format.horizontalAlignment = "Left";
+    lastCompletedSyncVersionRange.formulas = [[`="  " & "${context.currentSync.version}"`]];
+
+    const lastCompletedSyncTimeRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 5, 1, 1);
+    lastCompletedSyncTimeRange.format.fill.color = "#f2f2f2";
+    lastCompletedSyncTimeRange.format.font.color = "#7e350e";
+    lastCompletedSyncTimeRange.format.font.bold = true;
+    lastCompletedSyncTimeRange.format.horizontalAlignment = "Left";
+    lastCompletedSyncTimeRange.values = [[datetimeToExcel(context.currentSync.utc, true)]];
+    lastCompletedSyncTimeRange.numberFormat = [["  yyyy-mm-dd  HH:mm:ss"]];
+
+    console.log(`Current time 1: '${String(context.currentSync.utc)}'`);
+    console.log(`Current time 2: '${String(context.currentSync.utc.toLocaleString())}'`);
+    console.log(`Current time 3: '${String(context.currentSync.utc.toUTCString())}'`);
+    console.log(`Current time 3: '${String(context.currentSync.utc.getTime())}'`);
+
+    await context.excel.sync();
 }
 
 function setSheetProgressPercentage(currentSheetRelativeProgressPercentage: number, context: SyncContext) {
@@ -647,7 +700,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
                 // If the received data is different, update the transaction row:
                 if (needsUpdating) {
-                    tranDataVals[colIndexLastSyncVersion] = context.syncVersion;
+                    tranDataVals[colIndexLastSyncVersion] = context.currentSync.version;
                     exTran.range.values = [tranDataVals];
                     countExistingTransDetected.differentFromReceived++;
                     await context.excel.sync();
@@ -661,7 +714,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
                 for (const colName of tranTableColNames) {
                     if (colName === SpecialColumnNames.LastSyncVersion) {
-                        rowToAdd.push(context.syncVersion);
+                        rowToAdd.push(context.currentSync.version);
                     } else {
                         rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs));
                     }
@@ -742,6 +795,9 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         await applyColumnFormatting(tranTable, tranColumnsSpecs, context);
 
         setSheetProgressPercentage(90, context);
+
+        // Add info on transactions count, and on version and time of the last successful sync:
+        await createInfoRow(tranTable, context);
 
         // Auto-fit the table:
         tranTable.getRange().format.autofitColumns();

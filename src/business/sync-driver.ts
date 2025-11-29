@@ -12,7 +12,7 @@ import type { Ref } from "vue";
 
 export type SyncContext = {
     excel: Excel.RequestContext;
-    syncVersion: number;
+    currentSync: { version: number; utc: Date };
     isReplaceExistingTransactions: boolean;
     progressPercentage: Ref<number>;
     sheets: {
@@ -48,7 +48,7 @@ export async function downloadData(
         );
 
         const loadedAppSettings = await useSettings();
-        const currentSyncVersion = loadedAppSettings.lastCompletedSyncVersion.value + 1;
+        const currentSync = { version: loadedAppSettings.lastCompletedSyncVersion.value + 1, utc: new Date() };
 
         {
             const apiToken = loadedAppSettings.apiToken.value;
@@ -68,7 +68,7 @@ export async function downloadData(
 
             const syncCtx: SyncContext = {
                 excel: context,
-                syncVersion: currentSyncVersion,
+                currentSync,
                 isReplaceExistingTransactions: replaceExistingTransactions,
                 progressPercentage: syncOperationProgressPercentage,
                 sheets: {
@@ -88,8 +88,8 @@ export async function downloadData(
             await downloadTransactions(startDate, endDate, syncCtx);
         });
 
-        loadedAppSettings.lastCompletedSyncUtc.value = new Date();
-        loadedAppSettings.lastCompletedSyncVersion.value = currentSyncVersion;
+        loadedAppSettings.lastCompletedSyncUtc.value = currentSync.utc;
+        loadedAppSettings.lastCompletedSyncVersion.value = currentSync.version;
 
         console.log(`Completed downloadData(..).`);
     } finally {

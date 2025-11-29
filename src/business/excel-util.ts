@@ -97,6 +97,31 @@ export async function ensureSheetActive(
     return sheet;
 }
 
+export function datetimeToExcel(datetime: Date, adjustForLocalTz: boolean = false): number {
+    const dtMillis = datetime.getTime();
+
+    if (isNaN(dtMillis)) {
+        throw new Error(`Invalid date '${String(datetime)}'.`);
+    }
+
+    const adjustedMillis = adjustForLocalTz ? dtMillis - datetime.getTimezoneOffset() * 60 * 1000 : dtMillis;
+
+    // Excel epoch (1900 system): 1899-12-30
+    const excelEpochMillis = Math.abs(Date.UTC(1899, 11, 30));
+
+    const msecPerDay = 24 * 60 * 60 * 1000; // 86,400,000
+
+    // Convert JS ms → Excel days
+    const excelTs = (adjustedMillis + excelEpochMillis) / msecPerDay;
+
+    // Round to avoid precision issues:
+    const f = 10 ** 8;
+    const excelTsRounded = Math.round(excelTs * f) / f;
+
+    //console.debug(`datetimeToExcel('${String(datetime)}'): JS.ms='${dtMillis}' => Excel.ms='${excelTsRounded}'.`);
+    return excelTsRounded;
+}
+
 export function timeStrToExcel(datetimeStr: string | undefined | null): number | undefined | null {
     if (datetimeStr === undefined) {
         return undefined;
@@ -107,23 +132,14 @@ export function timeStrToExcel(datetimeStr: string | undefined | null): number |
     }
 
     const dt = new Date(datetimeStr);
-    const dtMillis = dt.getTime();
-
-    if (isNaN(dtMillis)) {
-        throw new Error(`Invalid date string '${datetimeStr}'.`);
+    try {
+        return datetimeToExcel(dt);
+    } catch (err) {
+        if (typeof err === "object" && err instanceof Error && err.message.startsWith("Invalid date")) {
+            throw new Error(`Invalid date string '${datetimeStr}'.`, { cause: err });
+        }
+        throw err;
     }
-
-    // Excel epoch (1900 system): 1899-12-30
-    const excelEpochMillis = Math.abs(Date.UTC(1899, 11, 30));
-
-    const msecPerDay = 24 * 60 * 60 * 1000; // 86,400,000
-
-    // Convert JS ms → Excel days
-    const excelTS = (dtMillis + excelEpochMillis) / msecPerDay;
-
-    // Round to avoid precision issues:
-    const f = 10 ** 8;
-    return Math.round(excelTS * f) / f;
 }
 
 export function getRangeBasedOn(
