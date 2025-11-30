@@ -1,15 +1,21 @@
 /// <reference types="office-js" />
 
 import { errorTypeMessageString } from "src/util/format_util";
-import { findTableByNameOnSheet, getRangeBasedOn, parseOnSheetAddress } from "./excel-util";
+import {
+    findTableByNameOnSheet,
+    formatCellAddressAsAbsolute,
+    getRangeBasedOn,
+    parseOnSheetAddress,
+} from "./excel-util";
 import { authorizedFetch } from "./fetch-tools";
 import type { Tag } from "./lunchmoney-types";
 import { strcmp } from "src/util/string_util";
 import type { SyncContext } from "./sync-driver";
+import { useSheetProgressTracker } from "src/composables/sheet-progress-tracker";
 
-export const SheetNameTags = "LM.Tags";
-const TableNameTags = "LM.TagsTable";
-const TableNameTagGroups = "LM.TagGroupsTable";
+export const SheetNameTags = "EL.Tags";
+const TableNameTags = "EL.TagsTable";
+const TableNameTagGroups = "EL.TagGroupsTable";
 
 export const TagGroupSeparator = ":";
 const UngroupedTagMoniker = ":Ungrouped";
@@ -66,19 +72,9 @@ export function createTagGroupHeader(groupName: string | null) {
     return `Tag:${groupName ?? UngroupedTagMoniker}`;
 }
 
-function setSheetProgressPercentage(currentSheetRelativeProgressPercentage: number, context: SyncContext) {
-    const currentSheetStartProgress = 3;
-    const currentSheetEndProgress = 15;
-
-    const sheetProgressRange = currentSheetEndProgress - currentSheetStartProgress;
-    const totalProgress =
-        currentSheetStartProgress + (sheetProgressRange / 100.0) * currentSheetRelativeProgressPercentage;
-
-    context.progressPercentage.value = totalProgress;
-}
-
 export async function downloadTags(context: SyncContext) {
-    setSheetProgressPercentage(0, context);
+    const tagsSheetProgressTracker = useSheetProgressTracker(3, 15, context);
+    tagsSheetProgressTracker.setPercentage(0);
 
     // Activate the sheet:
     context.sheets.tags.activate();
@@ -93,7 +89,7 @@ export async function downloadTags(context: SyncContext) {
     await context.excel.sync();
 
     try {
-        setSheetProgressPercentage(5, context);
+        tagsSheetProgressTracker.setPercentage(5);
 
         // Tags table spec:
         const tagsTableOffs = { row: 7, col: 1 };
@@ -120,7 +116,7 @@ export async function downloadTags(context: SyncContext) {
             await context.excel.sync();
         }
 
-        setSheetProgressPercentage(10, context);
+        tagsSheetProgressTracker.setPercentage(10);
 
         // Fetch Tags from the Cloud:
         const fetchedResponseText = await authorizedFetch("GET", "tags", "get all tags");
@@ -132,7 +128,7 @@ export async function downloadTags(context: SyncContext) {
         // Parse fetched Tags:
         const parsedTags: Tag[] = JSON.parse(fetchedResponseText);
 
-        setSheetProgressPercentage(50, context);
+        tagsSheetProgressTracker.setPercentage(50);
 
         // Preliminary table area header (final version after autofit, so that the header does not stretch its column):
         getRangeBasedOn(context.sheets.tags, tagsTableOffs, -3, 0, 1, 1).values = [["Tags"]];
@@ -215,7 +211,7 @@ export async function downloadTags(context: SyncContext) {
         countTagsFormulaRange.formulas = [[`="  " & COUNTA(${TableNameTags}[name])`]];
         await context.excel.sync();
 
-        setSheetProgressPercentage(60, context);
+        tagsSheetProgressTracker.setPercentage(60);
 
         // Process fetched tags and populate table:
         context.tags.assignable.clear();
@@ -258,7 +254,7 @@ export async function downloadTags(context: SyncContext) {
 
         console.log(`Tags table has ${tagsTable.rows.count} rows after the refresh.`);
 
-        setSheetProgressPercentage(75, context);
+        tagsSheetProgressTracker.setPercentage(75);
 
         // Now, we build the Tag Groups Table.
 
@@ -285,7 +281,7 @@ export async function downloadTags(context: SyncContext) {
             await context.excel.sync();
         }
 
-        setSheetProgressPercentage(85, context);
+        tagsSheetProgressTracker.setPercentage(85);
 
         // Print data about the Tag Groups:
         const tagGroupNames = getTagGroups(context.tags.assignable);
@@ -307,7 +303,7 @@ export async function downloadTags(context: SyncContext) {
             await context.excel.sync();
 
             const groupNameRangeSheetAddr = parseOnSheetAddress(groupNameRange.address);
-            const groupListRangeAbsoluteAddr = groupListRange.address.replace(/([A-Z]+)(\d+)/g, "$$$1$$$2");
+            const groupListRangeAbsoluteAddr = formatCellAddressAsAbsolute(groupListRange.address);
             context.tags.groupListFormulaLocations.set(groupName, groupListRangeAbsoluteAddr);
             // console.debug(
             //     `Tag Group #${g}: groupNameRangeSheetAddr='${groupNameRangeSheetAddr}';` +
@@ -347,7 +343,7 @@ export async function downloadTags(context: SyncContext) {
             await context.excel.sync();
         }
 
-        setSheetProgressPercentage(95, context);
+        tagsSheetProgressTracker.setPercentage(95);
 
         // Frame the printed Tag Group Item Count data with a table:
         const tagGroupsTable = context.sheets.tags.tables.add(
@@ -359,7 +355,7 @@ export async function downloadTags(context: SyncContext) {
         await context.excel.sync();
         console.debug(`New Tags Groups table '${TableNameTagGroups}' created.`);
 
-        setSheetProgressPercentage(100, context);
+        tagsSheetProgressTracker.setPercentage(100);
     } catch (err) {
         console.error(err);
         errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];

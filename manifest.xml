@@ -45,14 +45,14 @@
                 -->
                 <ExtensionPoint xsi:type="PrimaryCommandSurface">
                     <OfficeTab id="TabHome">
-                        <Group id="LM.TabGroup-Id">
+                        <Group id="EL.TabGroup-Id">
                             <Label resid="TabGroup-Label"/>
                             <Icon>
                                 <bt:Image size="16" resid="Icon.16x16"/>
                                 <bt:Image size="32" resid="Icon.32x32"/>
                                 <bt:Image size="80" resid="Icon.80x80"/>
                             </Icon>
-                            <Control xsi:type="Button" id="LM.ShowPaneButton-Id">
+                            <Control xsi:type="Button" id="EL.ShowPaneButton-Id">
                                 <Label resid="ShowPaneButton-Label"/>
                                 <Supertip>
                                    <Title resid="ShowPaneButton-Tip-Title"/>
@@ -64,7 +64,7 @@
                                     <bt:Image size="80" resid="Icon.80x80"/>
                                 </Icon>
                                 <Action xsi:type="ShowTaskpane">
-                                    <TaskpaneId>LM.Taskpain-Id</TaskpaneId>
+                                    <TaskpaneId>EL.Taskpain-Id</TaskpaneId>
                                     <Title resid="Taskpain-Title" />
                                     <SourceLocation resid="Taskpane-Url"/>
                                 </Action>

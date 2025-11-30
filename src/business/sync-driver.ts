@@ -9,6 +9,7 @@ import { downloadCategories, SheetNameCategories } from "./categories";
 import { downloadTransactions, SheetNameTransactions } from "./transactions";
 import { ensureSheetActive } from "./excel-util";
 import type { Ref } from "vue";
+import { IndexedMap } from "./IndexedMap";
 
 export type SyncContext = {
     excel: Excel.RequestContext;
@@ -24,6 +25,10 @@ export type SyncContext = {
         assignable: TagValuesCollection;
         groupListFormulaLocations: Map<string, string>;
         byId: Map<number, TagInfo>;
+    };
+    cats: {
+        assignable: IndexedMap<number, string>;
+        listFormulaLocation: string | null;
     };
 };
 
@@ -81,10 +86,14 @@ export async function downloadData(
                     groupListFormulaLocations: new Map<string, string>(),
                     byId: new Map<number, TagInfo>(),
                 },
+                cats: {
+                    assignable: new IndexedMap<number, string>(),
+                    listFormulaLocation: null,
+                },
             };
 
             await downloadTags(syncCtx);
-            await downloadCategories(context);
+            await downloadCategories(syncCtx);
             await downloadTransactions(startDate, endDate, syncCtx);
         });
 

@@ -1,6 +1,6 @@
 import type * as Lunch from "./lunchmoney-types";
 import { timeStrToExcel } from "./excel-util";
-import { isNullOrWhitespace } from "src/util/string_util";
+import { isNotNullOrWhitespaceStr, isNullOrWhitespace } from "src/util/string_util";
 import { getTagGroups, getTagValues, TagGroupSeparator, type TagValuesCollection } from "./tags";
 import type { SyncContext } from "./sync-driver";
 import { IndexedMap } from "./IndexedMap";
@@ -66,7 +66,26 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("payee", (t) => t.trn.payee),
     transColumn("Amount", (t) => t.trn.to_base, AccountingWithMinusFormatStr),
 
-    transColumn("Category", (t) => JJ(t.trn.category_group_name, t.trn.category_name)),
+    transColumn(
+        "Category",
+        (t) => JJ(t.trn.category_group_name, t.trn.category_name),
+        null,
+        async (_: Excel.RangeFormat, validation: Excel.DataValidation, context: SyncContext) => {
+            validation.clear();
+            await context.excel.sync();
+            validation.ignoreBlanks = true;
+
+            if (isNotNullOrWhitespaceStr(context.cats.listFormulaLocation)) {
+                validation.rule = { list: { inCellDropDown: true, source: `=${context.cats.listFormulaLocation}#` } };
+            } else {
+                validation.prompt = {
+                    showPrompt: true,
+                    title: "",
+                    message: "Failed to determine valid options for Category",
+                };
+            }
+        }
+    ),
 
     transColumn(TagColumnsPlaceholder, (_) => null),
 
@@ -270,35 +289,32 @@ function transColumn(
 
 function transTagColumn(tagGroupName: string, context?: SyncContext): TransactionColumnSpec {
     const validationListLocation = context?.tags.groupListFormulaLocations.get(tagGroupName);
-    // console.debug(
-    //     `transTagColumn(..): tagGroupName='${tagGroupName}'; validationListLocation:'${validationListLocation}'.`
-    // );
 
-    const validator: TransactionColumnFormatter = validationListLocation
-        ? async (_: Excel.RangeFormat, validation: Excel.DataValidation, context: SyncContext) => {
-              validation.clear();
-              await context.excel.sync();
+    const selectTagValidator: TransactionColumnFormatter = async (
+        _: Excel.RangeFormat,
+        validation: Excel.DataValidation,
+        context: SyncContext
+    ) => {
+        validation.clear();
+        await context.excel.sync();
+        validation.ignoreBlanks = true;
 
-              validation.rule = { list: { inCellDropDown: true, source: `=${validationListLocation}#` } };
-              validation.ignoreBlanks = true;
-          }
-        : async (_: Excel.RangeFormat, validation: Excel.DataValidation, context: SyncContext) => {
-              validation.clear();
-              await context.excel.sync();
-
-              validation.ignoreBlanks = true;
-              validation.prompt = {
-                  showPrompt: true,
-                  title: "",
-                  message: `Failed to determine valid options for '${formatTagGroupColumnHeader(tagGroupName)}'`,
-              };
-          };
+        if (validationListLocation) {
+            validation.rule = { list: { inCellDropDown: true, source: `=${validationListLocation}#` } };
+        } else {
+            validation.prompt = {
+                showPrompt: true,
+                title: "",
+                message: `Failed to determine valid options for '${formatTagGroupColumnHeader(tagGroupName)}'`,
+            };
+        }
+    };
 
     return {
         name: formatTagGroupColumnHeader(tagGroupName),
         valueFn: (t: Transaction) => getTransactionTagsByGroup(t, tagGroupName),
         numberFormat: null,
-        formatFn: validator,
+        formatFn: selectTagValidator,
     };
 }
 
@@ -425,6 +441,7 @@ async function setAllStopValidationRule(
         };
 
         try {
+            // This is such a treacherous bug is it happens, hard to diagnose. Be defensive.
             if (validation.prompt.message.length > 230) {
                 console.warn(
                     `About to fail:\n` +
@@ -456,6 +473,7 @@ async function setAllStopValidationRule(
 
         try {
             if (validation.errorAlert.message.length > 230) {
+                // This is such a treacherous bug is it happens, hard to diagnose. Be defensive.
                 console.warn(
                     `About to fail:\n` +
                         ` The length of 'validation.errorAlert.message'` +

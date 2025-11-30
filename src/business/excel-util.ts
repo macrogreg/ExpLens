@@ -68,7 +68,7 @@ export async function findTableByNameOnSheet(
     if (existingTableInfo.sheet.id !== expectedSheetId) {
         throw new Error(
             `Table '${tableName}' exists on the wrong sheet ('${existingTableInfo.range.address}').` +
-                "\n NOTE: Don't name any objects using prefix 'LM.';" +
+                "\n NOTE: Don't name any objects using prefix 'EL.';" +
                 " Don't edit any auto-created sheets, except where specified." +
                 "\n SOLUTION: Back-up your data, delete or rename the unexpected table, reload the Add-In."
         );
@@ -161,4 +161,9 @@ export function getRangeBasedOn(
 export function parseOnSheetAddress(address: string): string {
     const sepPos = address.indexOf("!");
     return sepPos < 0 ? address.trim() : address.substring(sepPos + 1).trim();
+}
+
+export function formatCellAddressAsAbsolute(cellAddr: string) {
+    const absoluteAddr = cellAddr.replace(/([A-Z]+)(\d+)/g, "$$$1$$$2");
+    return absoluteAddr;
 }

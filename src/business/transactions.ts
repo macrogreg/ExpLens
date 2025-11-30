@@ -18,9 +18,10 @@ import { authorizedFetch } from "./fetch-tools";
 import type * as Lunch from "./lunchmoney-types";
 import { IndexedMap } from "./IndexedMap";
 import type { SyncContext } from "./sync-driver";
+import { useSheetProgressTracker } from "src/composables/sheet-progress-tracker";
 
-export const SheetNameTransactions = "LM.Transactions";
-const TableNameTransactions = "LM.TransactionsTable";
+export const SheetNameTransactions = "EL.Transactions";
+const TableNameTransactions = "EL.TransactionsTable";
 
 function isColumnNamingEquivalent(
     columnsSpecs: IndexedMap<string, TransactionColumnSpec>,
@@ -329,19 +330,9 @@ async function createInfoRow(tranTable: Excel.Table, context: SyncContext) {
     await context.excel.sync();
 }
 
-function setSheetProgressPercentage(currentSheetRelativeProgressPercentage: number, context: SyncContext) {
-    const currentSheetStartProgress = 31;
-    const currentSheetEndProgress = 90;
-
-    const sheetProgressRange = currentSheetEndProgress - currentSheetStartProgress;
-    const totalProgress =
-        currentSheetStartProgress + (sheetProgressRange / 100.0) * currentSheetRelativeProgressPercentage;
-
-    context.progressPercentage.value = totalProgress;
-}
-
 export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {
-    setSheetProgressPercentage(0, context);
+    const transSheetProgressTracker = useSheetProgressTracker(31, 90, context);
+    transSheetProgressTracker.setPercentage(0);
 
     // Activate the sheet:
     context.sheets.trans.activate();
@@ -356,7 +347,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
     await context.excel.sync();
 
     try {
-        setSheetProgressPercentage(5, context);
+        transSheetProgressTracker.setPercentage(5);
         await printSheetHeaders(context);
 
         const tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec> = createTransactionColumnsSpecs(context);
@@ -428,7 +419,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             );
         }
 
-        setSheetProgressPercentage(10, context);
+        transSheetProgressTracker.setPercentage(10);
 
         // Load the values from the table so that empty rows can be found and deleted:
         const tranTableBodyRange = tranTable.getDataBodyRange();
@@ -458,7 +449,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         await context.excel.sync();
         console.debug(`Deleted ${countEmptyRowsDeleted} empty rows from table '${tranTable.name}'.`);
 
-        setSheetProgressPercentage(15, context);
+        transSheetProgressTracker.setPercentage(15);
 
         // Load data from the table into `existingTrans`:
 
@@ -511,7 +502,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 `\n    Time taken: ${performance.now() - msStartReadPreexistingData} msec.`
         );
 
-        setSheetProgressPercentage(30, context);
+        transSheetProgressTracker.setPercentage(30);
 
         // Fetch transactions:
 
@@ -528,7 +519,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         console.log(`Transactions fetched.\n    Time taken: ${performance.now() - msStartFetchTransactions} msec.`);
 
-        setSheetProgressPercentage(45, context);
+        transSheetProgressTracker.setPercentage(45);
 
         // Parse fetched Transactions:
         const fetched: { transactions: Lunch.Transaction[]; has_more: boolean } = JSON.parse(fetchedResponseText);
@@ -539,7 +530,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             console.error("There are more transactions to fetch, but this is not yet supported!");
         }
 
-        setSheetProgressPercentage(50, context);
+        transSheetProgressTracker.setPercentage(50);
 
         const receivedTrans = new IndexedMap<number, Transaction>();
 
@@ -594,7 +585,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 " imported form sources other than Plaid.)"
         );
 
-        setSheetProgressPercentage(55, context);
+        transSheetProgressTracker.setPercentage(55);
 
         // Parse Tags for all received transactions:
 
@@ -629,7 +620,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         console.log(`Received transactions contains tags from ${allReceivedTags.size} different groups.`);
 
-        setSheetProgressPercentage(60, context);
+        transSheetProgressTracker.setPercentage(60);
 
         // Go over downloaded transactions and decide what to do with Each:
         // - Existing transitions:
@@ -735,7 +726,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             tranRowsToAdd.length
         );
 
-        setSheetProgressPercentage(67, context);
+        transSheetProgressTracker.setPercentage(67);
 
         // Insert new transaction rows:
         tranTable.rows.load(["items", "count"]);
@@ -744,7 +735,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             await context.excel.sync();
         }
 
-        setSheetProgressPercentage(75, context);
+        transSheetProgressTracker.setPercentage(75);
 
         // Sort the table:
 
@@ -789,12 +780,12 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         tranTable.sort.apply(sortFields);
         await context.excel.sync();
 
-        setSheetProgressPercentage(80, context);
+        transSheetProgressTracker.setPercentage(80);
 
         // Apply formatting to all columns and rows:
         await applyColumnFormatting(tranTable, tranColumnsSpecs, context);
 
-        setSheetProgressPercentage(90, context);
+        transSheetProgressTracker.setPercentage(90);
 
         // Add info on transactions count, and on version and time of the last successful sync:
         await createInfoRow(tranTable, context);
@@ -803,7 +794,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         tranTable.getRange().format.autofitColumns();
         await context.excel.sync();
 
-        setSheetProgressPercentage(100, context);
+        transSheetProgressTracker.setPercentage(100);
     } catch (err) {
         console.error(err);
         errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];
