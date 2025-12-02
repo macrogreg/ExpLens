@@ -3,6 +3,7 @@
 import { type ConsoleFuncName, createVirtualConsole, redirectConsole } from "../sysutil/ConsoleRedirect";
 import { EventLevelKind, type OperationsTracker } from "../models/OperationsTracker";
 import { errorTypeMessageString, errorTypeString, formatValueSimple } from "src/util/format_util";
+import { DelayPromise } from "src/util/DelayPromise";
 
 export type ConsoleCaptureHandle = {
     isCancelled: () => boolean;
@@ -31,6 +32,11 @@ export function captureConsoleToTracker(tracker: OperationsTracker): ConsoleCapt
         const errT = "error" in errorEvent ? errorTypeString(errorEvent.error) : undefined;
         const errM = "error" in errorEvent ? errorTypeMessageString(errorEvent.error) : undefined;
         const titleInfo = errT ? ` (${errT})` : evT ? ` (${evT})` : "";
+
+        if (msg === ResizeObserverLoopCommonError) {
+            handleResizeObserverLoopCommonError(titleInfo, msg ?? errM ?? evT, errorEvent, tracker);
+            return;
+        }
 
         tracker.observeEvent(
             EventLevelKind.Err | EventLevelKind.ConsoleCapture,
@@ -140,3 +146,74 @@ const mapConsoleFuncToEventKind = (fn: ConsoleFuncName): EventLevelKind => {
             return EventLevelKind.Inf | EventLevelKind.ConsoleCapture;
     }
 };
+
+const ResizeObserverLoopCommonError = "ResizeObserver loop completed with undelivered notifications.";
+const AccumulatorPeriodMsec = 5000;
+
+let accumulatorResizeObserverLoopError: null | ReturnType<typeof createEventAccumulator> = null;
+
+function handleResizeObserverLoopCommonError(
+    titleInfo: string,
+    msg: string | undefined,
+    errorEvent: Event | ErrorEvent,
+    tracker: OperationsTracker
+) {
+    if (accumulatorResizeObserverLoopError === null) {
+        accumulatorResizeObserverLoopError = createEventAccumulator(AccumulatorPeriodMsec, tracker, () => {
+            accumulatorResizeObserverLoopError = null;
+        });
+    }
+
+    accumulatorResizeObserverLoopError.observeEvent(
+        EventLevelKind.Err | EventLevelKind.ConsoleCapture,
+        `An error occurred in the browser window and was not handled${titleInfo}.`,
+        msg,
+        errorEvent
+    );
+}
+
+function createEventAccumulator(lifetimeMsec: number, tracker: OperationsTracker, finishingFn: () => void) {
+    let countEvents = 0;
+
+    let lastEvent:
+        | undefined
+        | {
+              kind: EventLevelKind;
+              name: string | string[];
+              eventInfo: unknown;
+              moreInfo: unknown[];
+          } = undefined;
+
+    DelayPromise.Run(lifetimeMsec)
+        .finally(() => {
+            finishingFn();
+            if (countEvents === 0) {
+                return;
+            }
+
+            const lastEv = lastEvent!;
+            const n =
+                `Multiple events (${countEvents}) of the same kind occurred and were throttled over a period of ` +
+                ` ${lifetimeMsec} msec. Last event is shown.`;
+            tracker.observeEvent(lastEv.kind, n, lastEv.eventInfo, ...lastEv.moreInfo);
+        })
+        .catch(() => {});
+
+    return {
+        observeEvent: (
+            kind: EventLevelKind,
+            name: string | string[],
+            eventInfo: unknown = undefined,
+            ...moreInfo: unknown[]
+        ) => {
+            if (countEvents === 0) {
+                countEvents = 1;
+                lastEvent = undefined;
+                tracker.observeEvent(kind, name, eventInfo, ...moreInfo);
+                return;
+            }
+            countEvents++;
+            lastEvent = { kind, name, eventInfo, moreInfo };
+        },
+    };
+}

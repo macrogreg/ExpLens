@@ -3,7 +3,7 @@ import { TrackedOperation } from "./TrackedOperation";
 import { createRandomLetters, RotatingIdGenerator } from "src/util/id_util";
 import type { VirtualConsole } from "../sysutil/ConsoleRedirect";
 
-const FLAG_AVOID_LOGGING_TO_CONSOLE_FOR_CAPTURED_CONSOLE_OUTPUT = true as const;
+const FLAG_AVOID_LOGGING_TO_CONSOLE_FOR_CAPTURED_CONSOLE_OUTPUT = false as const;
 
 export interface ActiveOpsInfo {
     readonly iterator: IterableIterator<[number, TrackedOperation]>;
