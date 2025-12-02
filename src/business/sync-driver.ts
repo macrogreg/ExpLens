@@ -10,6 +10,7 @@ import { downloadTransactions, SheetNameTransactions } from "./transactions";
 import { ensureSheetActive } from "./excel-util";
 import type { Ref } from "vue";
 import { IndexedMap } from "./IndexedMap";
+import { useStatusLogState } from "src/status-tracker/composables/status-log-state";
 
 export type SyncContext = {
     excel: Excel.RequestContext;
@@ -41,11 +42,15 @@ export async function downloadData(
     syncOperationProgressPercentage: Ref<number>
 ): Promise<void> {
     if (isSyncInProgress === true) {
-        throw new Error("Cannot star data download, because data sync is already in progress.");
+        throw new Error("Cannot start data download, because data sync is already in progress.");
     }
 
+    let prevImportantOperationOngoing = true;
     try {
         isSyncInProgress = true;
+
+        prevImportantOperationOngoing = useStatusLogState().isImportantOperationOngoing.value;
+        useStatusLogState().setImportantOperationOngoing(true);
 
         console.log(
             `Starting downloadData(startDate=${formatDateUtc(startDate)}, endDate=${formatDateUtc(endDate)},` +
@@ -103,6 +108,7 @@ export async function downloadData(
         console.log(`Completed downloadData(..).`);
     } finally {
         syncOperationProgressPercentage.value = 100;
+        useStatusLogState().setImportantOperationOngoing(prevImportantOperationOngoing);
         isSyncInProgress = false;
     }
 }

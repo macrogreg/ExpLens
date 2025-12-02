@@ -731,8 +731,13 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         // Insert new transaction rows:
         tranTable.rows.load(["items", "count"]);
         if (tranRowsToAdd.length > 0) {
+            console.debug(`Inserting ${tranRowsToAdd.length} rows into the table...`);
+            const msStartAddTableRows = performance.now();
+
             tranTable.rows.add(0, tranRowsToAdd);
             await context.excel.sync();
+
+            console.log(`Rows inserted.\n    Time taken: ${performance.now() - msStartAddTableRows} msec.`);
         }
 
         transSheetProgressTracker.setPercentage(75);
