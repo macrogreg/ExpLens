@@ -1,4 +1,4 @@
-import { containsAtLeastNRegex } from "./string_util.js";
+import { containsAtLeastNRegex, isNotNullOrWhitespaceStr } from "./string_util.js";
 
 export const NewLineString = "\n" as const;
 
@@ -68,11 +68,64 @@ export function errorTypeMessageString(error: unknown): string {
         }
 
         if (error instanceof Error) {
-            return `${error.name ?? "NullErrorName"}: ${error.message ?? "NullErrorMessage"}`;
+            return `${error.name ?? "NullErrorName"}: '${error.message ?? "NullErrorMessage"}'`;
         }
     }
 
     return typeof error;
+}
+
+export function getClassName(instance: unknown): string {
+    if (instance === null) {
+        return "null";
+    }
+
+    if (instance === undefined) {
+        return "undefined";
+    }
+
+    if (typeof instance !== "object") {
+        return typeof instance;
+    }
+
+    const toString = (val: unknown) => (isNotNullOrWhitespaceStr(val) ? val : formatValueSimple(val));
+
+    // Support "branded" instances:
+    if (Symbol.toStringTag in instance) {
+        const monikerTag = instance[Symbol.toStringTag];
+        return toString(monikerTag);
+    }
+
+    const proto = Object.getPrototypeOf(instance);
+
+    // Support "branded" prototypes:
+    if (Symbol.toStringTag in proto) {
+        const monikerTag = proto[Symbol.toStringTag];
+        return toString(monikerTag);
+    }
+
+    // Instance and prototype are not "branded". Fall back to ctor name:
+    const ctor = proto && proto.constructor;
+    if (ctor && "name" in ctor && isNotNullOrWhitespaceStr(ctor.name)) {
+        return ctor.name;
+    }
+
+    // Ctor has no name (minified?). Try printing it (e.g.: "function MyClass() { [code] }"):
+    if (ctor && "toString" in ctor && typeof ctor.toString === "function") {
+        try {
+            const ctorStr = ctor.toString();
+            // matches "function Foo" or "class Foo":
+            const match = ctorStr.match(/function\s+([A-Za-z0-9_$]+)/) || ctorStr.match(/class\s+([A-Za-z0-9_$]+)/);
+            if (match && isNotNullOrWhitespaceStr(match[1])) return match[1];
+        } catch {
+            // Type mismatch safety
+        }
+    }
+
+    // Fallback for plain objects or no prototype. Expect format:
+    // 012345678901234
+    // [object Object]
+    return Object.prototype.toString.call(instance).slice(8, -1);
 }
 
 export function formatValueSimple(value: unknown): string {
@@ -110,7 +163,12 @@ function formatValueSimpleUnsafe(value: unknown) {
         return `"${value}"`;
     }
 
-    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" || typeof value === "symbol") {
+    if (
+        typeof value === "number" ||
+        typeof value === "boolean" ||
+        typeof value === "bigint" ||
+        typeof value === "symbol"
+    ) {
         return String(value);
     }
 
@@ -136,8 +194,9 @@ function formatValueSimpleUnsafe(value: unknown) {
     }
 
     try {
-        const objStr = Object.prototype.toString.call(value);
-        return objStr;
+        const className = getClassName(value);
+        const instanceStr = `[instanceof ${className}]`;
+        return instanceStr;
     } catch {
         return typeof value;
     }
@@ -201,7 +260,12 @@ function formatValueAny(value: unknown, indentLevel: number, options: Required<F
         return `"${value}"`;
     }
 
-    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" || typeof value === "symbol") {
+    if (
+        typeof value === "number" ||
+        typeof value === "boolean" ||
+        typeof value === "bigint" ||
+        typeof value === "symbol"
+    ) {
         return String(value);
     }
 
@@ -215,7 +279,7 @@ function formatValueAny(value: unknown, indentLevel: number, options: Required<F
     }
 
     if (value instanceof Error) {
-        return `${value.name}: '${value.message}'`;
+        return errorTypeMessageString(value);
     }
 
     if (value instanceof Set) {
@@ -326,7 +390,11 @@ function formatValueSet(value: Set<unknown>, indentLevel: number, options: Requi
     return arrayStr;
 }
 
-function formatValueMap(value: Map<unknown, unknown>, indentLevel: number, options: Required<FormatValueOptions>): string {
+function formatValueMap(
+    value: Map<unknown, unknown>,
+    indentLevel: number,
+    options: Required<FormatValueOptions>
+): string {
     if (value === null) {
         throw new Error(`This API only formats Map instances, but value is 'null'.`);
     }
@@ -383,9 +451,13 @@ function formatValueObject(value: object, indentLevel: number, options: Required
         throw new Error(`This API only formats objects, but value is '${typeof value}'.`);
     }
 
+    const valueClass = getClassName(value);
+    const valueClassView = valueClass === "Object" ? "" : valueClass;
+
     const oneIndentStr = options.levelIndent ?? "";
     const baseIndentStr = formatIndent(indentLevel, options);
     const valueStr = JSON.stringify(value, undefined, oneIndentStr);
+    const typedValueStr = `${valueClassView}${valueStr}`;
 
     // Must escape `oneIndentStr` if it contains regex control chars,
     // but for now it is only expected to contain white spaces.
@@ -393,11 +465,15 @@ function formatValueObject(value: object, indentLevel: number, options: Required
 
     // If the JSON has multiple properties, then it is already formatted to multiple lines and we need to indent it.
     // Otherwise reformat it to use a single line:
-    const hasTwoOrMoreProps = containsAtLeastNRegex(valueStr, indentPattern, 2);
-
-    const indentValStr = hasTwoOrMoreProps ? valueStr.replace(/(\r\n|\r|\n)/g, `$1${baseIndentStr}`) : JSON.stringify(value);
-
-    return indentValStr;
+    const hasTwoOrMoreProps = containsAtLeastNRegex(typedValueStr, indentPattern, 2);
+    if (hasTwoOrMoreProps) {
+        const indentValStr = typedValueStr.replace(/(\r\n|\r|\n)/g, `$1${baseIndentStr}`);
+        return indentValStr;
+    } else {
+        const nonIndentValueStr = JSON.stringify(value);
+        const nonIndentTypedValueStr = `${valueClassView}${nonIndentValueStr}`;
+        return nonIndentTypedValueStr;
+    }
 }
 
 function isSparseArray(

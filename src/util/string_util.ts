@@ -77,8 +77,19 @@ export function isNullOrWhitespaceStr(s: unknown): s is null | undefined | strin
     return false;
 }
 
+/** This will be `false` for String object instances. Use `isNotNullOrWhitespaceString(..)` in include them. */
+export function isNotNullOrWhitespaceStr(s: unknown): s is string {
+    if (s === null) return false;
+    if (s === undefined) return false;
+    if (typeof s === "string") {
+        if (s.length === 0) return false;
+        return s.trim().length > 0;
+    }
+    return false;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-wrapper-object-types
-export function isNotNullOrWhitespaceStr(s: unknown): s is string | String {
+export function isNotNullOrWhitespaceString(s: unknown): s is string | String {
     if (s === null) return false;
     if (s === undefined) return false;
     if (typeof s === "string" || s instanceof String) {
