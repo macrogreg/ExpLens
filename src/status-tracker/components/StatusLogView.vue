@@ -1,8 +1,8 @@
 <template>
-    <div v-if="!statusLogState.isDisplayRequired.value" class="status-log-show-trigger">
-        <q-btn flat dense round size="sm" icon="expand_less" @click="statusLogState.setDisplayMode('Always')" />
+    <div v-if="!statusLog.isDisplayRequired.value" class="status-log-show-trigger">
+        <q-btn flat dense round size="sm" icon="expand_less" @click="statusLog.setDisplayMode('Always')" />
     </div>
-    <div v-if="statusLogState.isDisplayRequired.value" class="status-log-container">
+    <div v-if="statusLog.isDisplayRequired.value" class="status-log-container">
         <div
             class="status-log-drawer"
             @mousedown="startDragResize"
@@ -57,7 +57,7 @@
                     >
                         <q-item
                             clickable
-                            @click="statusLogStateProxy.alwaysDisplay = !statusLogStateProxy.alwaysDisplay"
+                            @click="statusLogProxy.alwaysDisplay = !statusLogProxy.alwaysDisplay"
                             :inset-level="0.25"
                         >
                             <q-item-section>
@@ -66,7 +66,7 @@
                             </q-item-section>
                             <q-item-section side top>
                                 <q-toggle
-                                    v-model="statusLogStateProxy.alwaysDisplay"
+                                    v-model="statusLogProxy.alwaysDisplay"
                                     color="green"
                                     checked-icon="check"
                                     unchecked-icon="clear"
@@ -77,8 +77,8 @@
                         <q-item
                             clickable
                             @click="
-                                statusLogStateProxy.statusViewType =
-                                    statusLogStateProxy.statusViewType === 'FullLog' ? 'CurrentState' : 'FullLog'
+                                statusLogProxy.statusViewType =
+                                    statusLogProxy.statusViewType === 'FullLog' ? 'CurrentState' : 'FullLog'
                             "
                             :inset-level="0.25"
                         >
@@ -90,7 +90,7 @@
                                         style="display: flex"
                                         class="text-no-wrap"
                                         size="12px"
-                                        v-model="statusLogStateProxy.statusViewType"
+                                        v-model="statusLogProxy.statusViewType"
                                         dense
                                         unelevated
                                         rounded
@@ -120,7 +120,7 @@
 
                         <q-item
                             clickable
-                            @click="statusLogStateProxy.captureConsole = !statusLogStateProxy.captureConsole"
+                            @click="statusLogProxy.captureConsole = !statusLogProxy.captureConsole"
                             :inset-level="0.25"
                         >
                             <q-item-section>
@@ -129,7 +129,7 @@
                             </q-item-section>
                             <q-item-section side top>
                                 <q-toggle
-                                    v-model="statusLogStateProxy.captureConsole"
+                                    v-model="statusLogProxy.captureConsole"
                                     color="green"
                                     checked-icon="check"
                                     unchecked-icon="clear"
@@ -139,7 +139,7 @@
 
                         <q-item
                             clickable
-                            @click="statusLogStateProxy.captureWindowErr = !statusLogStateProxy.captureWindowErr"
+                            @click="statusLogProxy.captureWindowErr = !statusLogProxy.captureWindowErr"
                             :inset-level="0.25"
                         >
                             <q-item-section>
@@ -148,7 +148,7 @@
                             </q-item-section>
                             <q-item-section side top>
                                 <q-toggle
-                                    v-model="statusLogStateProxy.captureWindowErr"
+                                    v-model="statusLogProxy.captureWindowErr"
                                     color="green"
                                     checked-icon="check"
                                     unchecked-icon="clear"
@@ -158,7 +158,7 @@
 
                         <q-item
                             clickable
-                            @click="statusLogStateProxy.writeToConsole = !statusLogStateProxy.writeToConsole"
+                            @click="statusLogProxy.writeToConsole = !statusLogProxy.writeToConsole"
                             :inset-level="0.25"
                         >
                             <q-item-section>
@@ -167,7 +167,7 @@
                             </q-item-section>
                             <q-item-section side top>
                                 <q-toggle
-                                    v-model="statusLogStateProxy.writeToConsole"
+                                    v-model="statusLogProxy.writeToConsole"
                                     color="green"
                                     checked-icon="check"
                                     unchecked-icon="clear"
@@ -200,13 +200,13 @@
                     spellcheck="false"
                     autofocus="false"
                     :placeholder="
-                        (statusLogState.statusViewType.value === 'FullLog'
+                        (statusLog.statusViewType.value === 'FullLog'
                             ? 'Operations Log will appear here.'
                             : 'Current operation status will appear here.') + ' \n(You can hide this in the Settings.)'
                     "
                     wrap="off"
                     readonly
-                    v-model="statusLogState.statusView.value"
+                    v-model="statusLog.statusView.value"
                 />
             </div>
         </div>
@@ -365,7 +365,7 @@
 
 <script setup lang="ts">
 //import { useAppSettingsStore } from "stores/app-settings";
-import { useStatusLogState, rebuildFullLogView, StatusViewTypes } from "../composables/status-log-state";
+import { useStatusLog, rebuildFullLogView, StatusViewTypes } from "../composables/status-log";
 import { ref, watch, nextTick, useTemplateRef, reactive } from "vue";
 import { ionBuildOutline } from "@quasar/extras/ionicons-v7";
 import { Platform } from "quasar";
@@ -579,64 +579,64 @@ function triggerJumpResize() {
     setTimeout(stepFrameFunction, jumpResizeConfig_DurationMs / remainSteps);
 }
 
-const statusLogState = useStatusLogState();
+const statusLog = useStatusLog();
 
-// console.debug(`StatusLogView:", " statusLogState:`, statusLogState);
+// console.debug(`StatusLogView:", " statusLog:`, statusLog);
 
-// Local refs for statusLogState - needed for proper reactivity in dropdown portal
-const statusLogStateProxy = reactive({
-    alwaysDisplay: statusLogState.displayMode.value === "Always",
-    statusViewType: statusLogState.statusViewType.value,
-    captureConsole: statusLogState.captureConsole.value,
-    captureWindowErr: statusLogState.captureWindowErr.value,
-    writeToConsole: statusLogState.writeToConsole.value,
+// Local refs for statusLog - needed for proper reactivity in dropdown portal
+const statusLogProxy = reactive({
+    alwaysDisplay: statusLog.displayMode.value === "Always",
+    statusViewType: statusLog.statusViewType.value,
+    captureConsole: statusLog.captureConsole.value,
+    captureWindowErr: statusLog.captureWindowErr.value,
+    writeToConsole: statusLog.writeToConsole.value,
 });
 
 watch(
-    () => statusLogStateProxy.alwaysDisplay,
+    () => statusLogProxy.alwaysDisplay,
     (newVal: boolean) => {
-        statusLogState.setDisplayMode(newVal ? "Always" : "DuringImportantOperations");
+        statusLog.setDisplayMode(newVal ? "Always" : "DuringImportantOperations");
     }
 );
 watch(
-    () => statusLogStateProxy.statusViewType,
+    () => statusLogProxy.statusViewType,
     (newVal) => {
-        statusLogState.setStatusViewType(newVal);
+        statusLog.setStatusViewType(newVal);
     }
 );
 watch(
-    () => statusLogStateProxy.captureConsole,
+    () => statusLogProxy.captureConsole,
     (newVal) => {
-        statusLogState.setCaptureConsole(newVal);
+        statusLog.setCaptureConsole(newVal);
     }
 );
 watch(
-    () => statusLogStateProxy.captureWindowErr,
+    () => statusLogProxy.captureWindowErr,
     (newVal) => {
-        statusLogState.setCaptureWindowErr(newVal);
+        statusLog.setCaptureWindowErr(newVal);
     }
 );
 watch(
-    () => statusLogStateProxy.writeToConsole,
+    () => statusLogProxy.writeToConsole,
     (newVal) => {
-        statusLogState.setWriteToConsole(newVal);
+        statusLog.setWriteToConsole(newVal);
     }
 );
 
-watch(statusLogState.displayMode, (newVal) => {
-    statusLogStateProxy.alwaysDisplay = newVal === "Always";
+watch(statusLog.displayMode, (newVal) => {
+    statusLogProxy.alwaysDisplay = newVal === "Always";
 });
-watch(statusLogState.statusViewType, (newVal) => {
-    statusLogStateProxy.statusViewType = newVal;
+watch(statusLog.statusViewType, (newVal) => {
+    statusLogProxy.statusViewType = newVal;
 });
-watch(statusLogState.captureConsole, (newVal) => {
-    statusLogStateProxy.captureConsole = newVal;
+watch(statusLog.captureConsole, (newVal) => {
+    statusLogProxy.captureConsole = newVal;
 });
-watch(statusLogState.captureWindowErr, (newVal) => {
-    statusLogStateProxy.captureWindowErr = newVal;
+watch(statusLog.captureWindowErr, (newVal) => {
+    statusLogProxy.captureWindowErr = newVal;
 });
-watch(statusLogState.writeToConsole, (newVal) => {
-    statusLogStateProxy.writeToConsole = newVal;
+watch(statusLog.writeToConsole, (newVal) => {
+    statusLogProxy.writeToConsole = newVal;
 });
 
 // {
@@ -653,7 +653,7 @@ watch(statusLogState.writeToConsole, (newVal) => {
 //         statusViewTypeConfig,
 //         (viewType) => {
 //             //console.debug(`LogView: SettingsStore.ViewType => ${viewType} => LogStore.ViewType`);
-//             statusLogState.setStatusViewType(viewType);
+//             statusLog.setStatusViewType(viewType);
 //         },
 //         { immediate: true }
 //     );
@@ -662,7 +662,7 @@ watch(statusLogState.writeToConsole, (newVal) => {
 //         statusViewCaptureConsoleConfig,
 //         (captureConsole) => {
 //             //console.debug(`LogView: SettingsStore.CaptureConsole => ${captureConsole} => LogStore.CaptureConsole`);
-//             statusLogState.setCaptureConsole(captureConsole);
+//             statusLog.setCaptureConsole(captureConsole);
 //         },
 //         { immediate: true }
 //     );
@@ -671,7 +671,7 @@ watch(statusLogState.writeToConsole, (newVal) => {
 //         statusViewWriteToConsoleConfig,
 //         (writeToConsole) => {
 //             //console.debug(`LogView: SettingsStore.WriteToConsole => ${writeToConsole} => LogStore.WriteToConsole`);
-//             statusLogState.setWriteToConsole(writeToConsole);
+//             statusLog.setWriteToConsole(writeToConsole);
 //         },
 //         { immediate: true }
 //     );
@@ -681,7 +681,7 @@ watch(statusLogState.writeToConsole, (newVal) => {
 
 const refTextArea = useTemplateRef<HTMLTextAreaElement>("refTextArea");
 
-watch(statusLogState.statusView, async () => {
+watch(statusLog.statusView, async () => {
     // Wait for DOM update
     await nextTick();
 
@@ -691,7 +691,7 @@ watch(statusLogState.statusView, async () => {
     }
 
     let scrollTopDest;
-    switch (statusLogState.statusViewType.value) {
+    switch (statusLog.statusViewType.value) {
         case "FullLog":
             scrollTopDest = textarea.scrollHeight;
             break;
@@ -719,7 +719,7 @@ async function copyLogToClipboard(): Promise<void> {
             notifyPositive("The entire Log was copied to clipboard.");
             return;
         case "legacy":
-            if (statusLogState.statusViewType.value === "CurrentState") {
+            if (statusLog.statusViewType.value === "CurrentState") {
                 notifyInfo(
                     "Current State displayed in Status View was copied to clipboard." +
                         " Switch to *Full Log* to copy the entire log."
@@ -737,7 +737,7 @@ async function copyLogToClipboard(): Promise<void> {
 }
 
 async function execCopyViewContent(): Promise<"clipboard" | "legacy" | "error"> {
-    const opCopyStatusView = statusLogState.tracker().startOperation("Copying Status Info to Clipboard");
+    const opCopyStatusView = statusLog.tracker.startOperation("Copying Status Info to Clipboard");
     await DelayPromise.Run(500);
 
     const isSecureContext = window.isSecureContext;
@@ -746,7 +746,7 @@ async function execCopyViewContent(): Promise<"clipboard" | "legacy" | "error"> 
     } else {
         try {
             if (navigator.clipboard) {
-                const logText = rebuildFullLogView(statusLogState.tracker().loggedOps);
+                const logText = rebuildFullLogView(statusLog.tracker.loggedOps);
 
                 await navigator.clipboard.writeText(logText);
                 opCopyStatusView.setSuccess("via Clipboard API");
@@ -789,11 +789,11 @@ async function execCopyViewContent(): Promise<"clipboard" | "legacy" | "error"> 
 }
 
 function dropLogForCompletedOps() {
-    statusLogState.tracker().dropLogEntriesForCompletedOps();
+    statusLog.tracker.dropLogEntriesForCompletedOps();
 }
 
 async function fillLogWithDummyData() {
-    await statusLogState.tracker().createBulkDummyOperations(75000);
+    await statusLog.tracker.createBulkDummyOperations(75000);
 }
 
 const refToolsDropdown = useTemplateRef("refToolsDropdown");

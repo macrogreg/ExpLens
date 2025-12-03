@@ -273,6 +273,10 @@ const statusLogState = {
     //     set: (newVal: boolean) => setWriteToConsole(newVal),
     // }),
 
+    get tracker() {
+        return tracker();
+    },
+
     statusView: shallowReadonly(statusView),
 
     statusViewType: shallowReadonly(statusViewType),
@@ -283,8 +287,6 @@ const statusLogState = {
     displayMode: shallowReadonly(displayMode),
     isImportantOperationOngoing: shallowReadonly(isImportantOperationOngoing),
     isDisplayRequired: shallowReadonly(isDisplayRequired),
-
-    tracker,
 
     setStatusViewType,
     setCaptureConsole,
@@ -309,6 +311,6 @@ statusLogState.setCaptureConsole(true);
 statusLogState.setCaptureWindowErr(true);
 statusLogState.setWriteToConsole(true);
 
-export function useStatusLogState() {
+export function useStatusLog() {
     return statusLogState;
 }

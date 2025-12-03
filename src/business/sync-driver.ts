@@ -1,7 +1,6 @@
 /// <reference types="office-js" />
 
 import { useSettings } from "src/composables/settings";
-import { formatDateUtc } from "src/util/format_util";
 import { isNullOrWhitespace } from "src/util/string_util";
 import type { TagInfo } from "./tags";
 import { downloadTags, SheetNameTags, type TagValuesCollection } from "./tags";
@@ -10,7 +9,7 @@ import { downloadTransactions, SheetNameTransactions } from "./transactions";
 import { ensureSheetActive } from "./excel-util";
 import type { Ref } from "vue";
 import { IndexedMap } from "./IndexedMap";
-import { useStatusLogState } from "src/status-tracker/composables/status-log-state";
+import { useStatusLog } from "src/status-tracker/composables/status-log";
 
 export type SyncContext = {
     excel: Excel.RequestContext;
@@ -41,21 +40,23 @@ export async function downloadData(
     replaceExistingTransactions: boolean,
     syncOperationProgressPercentage: Ref<number>
 ): Promise<void> {
+    const statusLog = useStatusLog();
+
     if (isSyncInProgress === true) {
         throw new Error("Cannot start data download, because data sync is already in progress.");
     }
 
+    const opDownloadData = statusLog.tracker.startOperation("Download Data", {
+        replaceExistingTransactions,
+        startDate,
+        endDate,
+    });
     let prevImportantOperationOngoing = true;
     try {
         isSyncInProgress = true;
 
-        prevImportantOperationOngoing = useStatusLogState().isImportantOperationOngoing.value;
-        useStatusLogState().setImportantOperationOngoing(true);
-
-        console.log(
-            `Starting downloadData(startDate=${formatDateUtc(startDate)}, endDate=${formatDateUtc(endDate)},` +
-                ` replaceExistingTransactions=${replaceExistingTransactions}).`
-        );
+        prevImportantOperationOngoing = useStatusLog().isImportantOperationOngoing.value;
+        statusLog.setImportantOperationOngoing(true);
 
         const loadedAppSettings = await useSettings();
         const currentSync = { version: loadedAppSettings.lastCompletedSyncVersion.value + 1, utc: new Date() };
@@ -63,11 +64,11 @@ export async function downloadData(
         {
             const apiToken = loadedAppSettings.apiToken.value;
             if (isNullOrWhitespace(apiToken)) {
-                console.log("No API token. Cannot proceed with download");
+                opDownloadData.setFailure("No API token. Cannot proceed with download");
                 return;
             }
 
-            console.debug(`downloadData(..): has API token (${apiToken!.length} chars).`);
+            opDownloadData.addInfo(`downloadData(..): has API token (${apiToken!.length} chars).`);
         }
 
         await Excel.run(async (context: Excel.RequestContext) => {
@@ -105,10 +106,12 @@ export async function downloadData(
         loadedAppSettings.lastCompletedSyncUtc.value = currentSync.utc;
         loadedAppSettings.lastCompletedSyncVersion.value = currentSync.version;
 
-        console.log(`Completed downloadData(..).`);
+        opDownloadData.setSuccess();
+    } catch (err) {
+        opDownloadData.setFailureAndRethrow(err);
     } finally {
         syncOperationProgressPercentage.value = 100;
-        useStatusLogState().setImportantOperationOngoing(prevImportantOperationOngoing);
+        statusLog.setImportantOperationOngoing(prevImportantOperationOngoing);
         isSyncInProgress = false;
     }
 }
