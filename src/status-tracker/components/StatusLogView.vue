@@ -57,35 +57,16 @@
                     >
                         <q-item
                             clickable
-                            @click="statusLogStateProxy.captureConsole = !statusLogStateProxy.captureConsole"
+                            @click="statusLogStateProxy.alwaysDisplay = !statusLogStateProxy.alwaysDisplay"
                             :inset-level="0.25"
                         >
                             <q-item-section>
-                                <q-item-label>Capture Console</q-item-label>
-                                <q-item-label caption>Mirror console output to the status log</q-item-label>
+                                <q-item-label>Always show status</q-item-label>
+                                <q-item-label caption>Show always, or during data updates only</q-item-label>
                             </q-item-section>
                             <q-item-section side top>
                                 <q-toggle
-                                    v-model="statusLogStateProxy.captureConsole"
-                                    color="green"
-                                    checked-icon="check"
-                                    unchecked-icon="clear"
-                                />
-                            </q-item-section>
-                        </q-item>
-
-                        <q-item
-                            clickable
-                            @click="statusLogStateProxy.writeToConsole = !statusLogStateProxy.writeToConsole"
-                            :inset-level="0.25"
-                        >
-                            <q-item-section>
-                                <q-item-label>Mirror to Console</q-item-label>
-                                <q-item-label caption>Mirror status log to the console</q-item-label>
-                            </q-item-section>
-                            <q-item-section side top>
-                                <q-toggle
-                                    v-model="statusLogStateProxy.writeToConsole"
+                                    v-model="statusLogStateProxy.alwaysDisplay"
                                     color="green"
                                     checked-icon="check"
                                     unchecked-icon="clear"
@@ -139,16 +120,54 @@
 
                         <q-item
                             clickable
-                            @click="statusLogStateProxy.alwaysDisplay = !statusLogStateProxy.alwaysDisplay"
+                            @click="statusLogStateProxy.captureConsole = !statusLogStateProxy.captureConsole"
                             :inset-level="0.25"
                         >
                             <q-item-section>
-                                <q-item-label>Always show status</q-item-label>
-                                <q-item-label caption>Show always, or during data updates only</q-item-label>
+                                <q-item-label>Capture Console</q-item-label>
+                                <q-item-label caption>Mirror console output to the status log</q-item-label>
                             </q-item-section>
                             <q-item-section side top>
                                 <q-toggle
-                                    v-model="statusLogStateProxy.alwaysDisplay"
+                                    v-model="statusLogStateProxy.captureConsole"
+                                    color="green"
+                                    checked-icon="check"
+                                    unchecked-icon="clear"
+                                />
+                            </q-item-section>
+                        </q-item>
+
+                        <q-item
+                            clickable
+                            @click="statusLogStateProxy.captureWindowErr = !statusLogStateProxy.captureWindowErr"
+                            :inset-level="0.25"
+                        >
+                            <q-item-section>
+                                <q-item-label>Capture Window Errors</q-item-label>
+                                <q-item-label caption>Show unhandled browser errors to the status log</q-item-label>
+                            </q-item-section>
+                            <q-item-section side top>
+                                <q-toggle
+                                    v-model="statusLogStateProxy.captureWindowErr"
+                                    color="green"
+                                    checked-icon="check"
+                                    unchecked-icon="clear"
+                                />
+                            </q-item-section>
+                        </q-item>
+
+                        <q-item
+                            clickable
+                            @click="statusLogStateProxy.writeToConsole = !statusLogStateProxy.writeToConsole"
+                            :inset-level="0.25"
+                        >
+                            <q-item-section>
+                                <q-item-label>Mirror to Console</q-item-label>
+                                <q-item-label caption>Mirror status log to the console</q-item-label>
+                            </q-item-section>
+                            <q-item-section side top>
+                                <q-toggle
+                                    v-model="statusLogStateProxy.writeToConsole"
                                     color="green"
                                     checked-icon="check"
                                     unchecked-icon="clear"
@@ -201,7 +220,18 @@
 }
 
 .status-log-dropdown-menu .q-item {
-    min-height: 36px;
+    min-height: 32px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.status-log-dropdown-menu .q-item__label--caption {
+    font-size: 0.7rem;
+}
+
+.status-log-dropdown-menu .q-expansion-item__content {
+    padding-top: 0;
+    padding-bottom: 0;
 }
 </style>
 
@@ -555,22 +585,17 @@ const statusLogState = useStatusLogState();
 
 // Local refs for statusLogState - needed for proper reactivity in dropdown portal
 const statusLogStateProxy = reactive({
-    captureConsole: statusLogState.captureConsole.value,
-    writeToConsole: statusLogState.writeToConsole.value,
-    statusViewType: statusLogState.statusViewType.value,
     alwaysDisplay: statusLogState.displayMode.value === "Always",
+    statusViewType: statusLogState.statusViewType.value,
+    captureConsole: statusLogState.captureConsole.value,
+    captureWindowErr: statusLogState.captureWindowErr.value,
+    writeToConsole: statusLogState.writeToConsole.value,
 });
 
 watch(
-    () => statusLogStateProxy.captureConsole,
-    (newVal) => {
-        statusLogState.setCaptureConsole(newVal);
-    }
-);
-watch(
-    () => statusLogStateProxy.writeToConsole,
-    (newVal) => {
-        statusLogState.setWriteToConsole(newVal);
+    () => statusLogStateProxy.alwaysDisplay,
+    (newVal: boolean) => {
+        statusLogState.setDisplayMode(newVal ? "Always" : "DuringImportantOperations");
     }
 );
 watch(
@@ -580,22 +605,38 @@ watch(
     }
 );
 watch(
-    () => statusLogStateProxy.alwaysDisplay,
-    (newVal: boolean) => {
-        statusLogState.setDisplayMode(newVal ? "Always" : "DuringImportantOperations");
+    () => statusLogStateProxy.captureConsole,
+    (newVal) => {
+        statusLogState.setCaptureConsole(newVal);
     }
 );
-watch(statusLogState.captureConsole, (newVal) => {
-    statusLogStateProxy.captureConsole = newVal;
-});
-watch(statusLogState.writeToConsole, (newVal) => {
-    statusLogStateProxy.writeToConsole = newVal;
+watch(
+    () => statusLogStateProxy.captureWindowErr,
+    (newVal) => {
+        statusLogState.setCaptureWindowErr(newVal);
+    }
+);
+watch(
+    () => statusLogStateProxy.writeToConsole,
+    (newVal) => {
+        statusLogState.setWriteToConsole(newVal);
+    }
+);
+
+watch(statusLogState.displayMode, (newVal) => {
+    statusLogStateProxy.alwaysDisplay = newVal === "Always";
 });
 watch(statusLogState.statusViewType, (newVal) => {
     statusLogStateProxy.statusViewType = newVal;
 });
-watch(statusLogState.displayMode, (newVal) => {
-    statusLogStateProxy.alwaysDisplay = newVal === "Always";
+watch(statusLogState.captureConsole, (newVal) => {
+    statusLogStateProxy.captureConsole = newVal;
+});
+watch(statusLogState.captureWindowErr, (newVal) => {
+    statusLogStateProxy.captureWindowErr = newVal;
+});
+watch(statusLogState.writeToConsole, (newVal) => {
+    statusLogStateProxy.writeToConsole = newVal;
 });
 
 // {

@@ -54,7 +54,7 @@ export function errorTypeString(error: unknown): string {
         return error.name ?? "null";
     }
 
-    return typeof error;
+    return getClassName(error);
 }
 
 export function errorTypeMessageString(error: unknown): string {
@@ -72,7 +72,7 @@ export function errorTypeMessageString(error: unknown): string {
         }
     }
 
-    return typeof error;
+    return getClassName(error);
 }
 
 export function getClassName(instance: unknown): string {

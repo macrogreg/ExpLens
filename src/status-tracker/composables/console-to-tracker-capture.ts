@@ -1,9 +1,9 @@
 //
 
 import { type ConsoleFuncName, createVirtualConsole, redirectConsole } from "../sysutil/ConsoleRedirect";
-import { EventLevelKind, type OperationsTracker } from "../models/OperationsTracker";
-import { errorTypeMessageString, errorTypeString, formatValueSimple } from "src/util/format_util";
-import { DelayPromise } from "src/util/DelayPromise";
+import { type OperationsTracker } from "../models/OperationsTracker";
+import { formatValueSimple } from "src/util/format_util";
+import { EventLevelKind, formatEventLevelCaptureKind } from "../models/EventLevelKind";
 
 export type ConsoleCaptureHandle = {
     isCancelled: () => boolean;
@@ -13,9 +13,20 @@ export type ConsoleCaptureHandle = {
     invokeOriginalFunc: (funcName: ConsoleFuncName, ...args: unknown[]) => boolean;
 };
 
+/** @internal */
+export function formatCaptureBeginMessage(captureKindIcon: string, captureKindDescr: string) {
+    return ` *-*-* 🧲${captureKindIcon} ${captureKindDescr} Capture BEGIN *-*-*`;
+}
+
+/** @internal */
+export function formatCaptureEndMessage(captureKindIcon: string, captureKindDescr: string) {
+    return ` *-*-* 🧲${captureKindIcon} ${captureKindDescr} Capture END *-*-*`;
+}
+
 const CapturedCallMessage = "console" as const;
-const BeginCaptureMessage = " *-*-* 🧲 Console Output Capture BEGIN *-*-*" as const;
-const EndCaptureMessage = " *-*-* 🧲 Console Output Capture END *-*-*" as const;
+const CaptureKindIcon = formatEventLevelCaptureKind(EventLevelKind.ConsoleCapture);
+const BeginCaptureMessage = formatCaptureBeginMessage(CaptureKindIcon, "Console Output");
+const EndCaptureMessage = formatCaptureEndMessage(CaptureKindIcon, "Console Output");
 
 export function captureConsoleToTracker(tracker: OperationsTracker): ConsoleCaptureHandle {
     //
@@ -25,51 +36,6 @@ export function captureConsoleToTracker(tracker: OperationsTracker): ConsoleCapt
     const virtualConsole = createVirtualConsole();
     const prevVirtualConsole = tracker.config.virtualConsole;
     tracker.config.virtualConsole = virtualConsole;
-
-    const errorEventHandler = (errorEvent: Event | ErrorEvent) => {
-        const evT = "type" in errorEvent ? errorEvent.type : undefined;
-        const msg = "message" in errorEvent ? errorEvent.message : undefined;
-        const errT = "error" in errorEvent ? errorTypeString(errorEvent.error) : undefined;
-        const errM = "error" in errorEvent ? errorTypeMessageString(errorEvent.error) : undefined;
-        const titleInfo = errT ? ` (${errT})` : evT ? ` (${evT})` : "";
-
-        if (msg === ResizeObserverLoopCommonError) {
-            handleResizeObserverLoopCommonError(titleInfo, msg ?? errM ?? evT, errorEvent, tracker);
-            return;
-        }
-
-        tracker.observeEvent(
-            EventLevelKind.Err | EventLevelKind.ConsoleCapture,
-            `An unhandled error occurred${titleInfo}.`,
-            msg ?? errM ?? evT,
-            errorEvent
-        );
-    };
-
-    const asyncErrorEventHandler = (errorEvent: Event | PromiseRejectionEvent) => {
-        const evT = "type" in errorEvent ? errorEvent.type : undefined;
-        const hasReas = "reason" in errorEvent;
-        const reas = hasReas ? errorEvent.reason : undefined;
-
-        const reasT = typeof reas;
-        const isErr = reas && reasT === "object" && reas instanceof Error;
-
-        const titleInfo = isErr
-            ? ` (${errorTypeString(reas)})`
-            : reasT !== "object" && reasT !== "function"
-              ? ` (${String(reas)})`
-              : "";
-
-        tracker.observeEvent(
-            EventLevelKind.Err | EventLevelKind.ConsoleCapture,
-            `An unhandled promise rejection occurred${titleInfo}.`,
-            hasReas ? formatValueSimple(reas) : evT,
-            errorEvent
-        );
-    };
-
-    window.addEventListener("error", errorEventHandler, true);
-    window.addEventListener("unhandledrejection", asyncErrorEventHandler);
 
     // Redirect console calls so that they form data to the tracker, but still write to the console
     const underlyingRedirHndl = redirectConsole(
@@ -110,9 +76,6 @@ export function captureConsoleToTracker(tracker: OperationsTracker): ConsoleCapt
 
             // Restore tracker's console to whatever it was before:
             if (hasCanceled && tracker.config.virtualConsole === virtualConsole) {
-                window.removeEventListener("unhandledrejection", asyncErrorEventHandler);
-                window.removeEventListener("error", errorEventHandler, true);
-
                 tracker.config.virtualConsole = prevVirtualConsole;
             } else {
                 const msg =
@@ -146,74 +109,3 @@ const mapConsoleFuncToEventKind = (fn: ConsoleFuncName): EventLevelKind => {
             return EventLevelKind.Inf | EventLevelKind.ConsoleCapture;
     }
 };
-
-const ResizeObserverLoopCommonError = "ResizeObserver loop completed with undelivered notifications.";
-const AccumulatorPeriodMsec = 5000;
-
-let accumulatorResizeObserverLoopError: null | ReturnType<typeof createEventAccumulator> = null;
-
-function handleResizeObserverLoopCommonError(
-    titleInfo: string,
-    msg: string | undefined,
-    errorEvent: Event | ErrorEvent,
-    tracker: OperationsTracker
-) {
-    if (accumulatorResizeObserverLoopError === null) {
-        accumulatorResizeObserverLoopError = createEventAccumulator(AccumulatorPeriodMsec, tracker, () => {
-            accumulatorResizeObserverLoopError = null;
-        });
-    }
-
-    accumulatorResizeObserverLoopError.observeEvent(
-        EventLevelKind.Err | EventLevelKind.ConsoleCapture,
-        `An error occurred in the browser window and was not handled${titleInfo}.`,
-        msg,
-        errorEvent
-    );
-}
-
-function createEventAccumulator(lifetimeMsec: number, tracker: OperationsTracker, finishingFn: () => void) {
-    let countEvents = 0;
-
-    let lastEvent:
-        | undefined
-        | {
-              kind: EventLevelKind;
-              name: string | string[];
-              eventInfo: unknown;
-              moreInfo: unknown[];
-          } = undefined;
-
-    DelayPromise.Run(lifetimeMsec)
-        .finally(() => {
-            finishingFn();
-            if (countEvents === 0) {
-                return;
-            }
-
-            const lastEv = lastEvent!;
-            const n =
-                `Multiple events (${countEvents}) of the same kind occurred and were throttled over a period of ` +
-                ` ${lifetimeMsec} msec. Last event is shown.`;
-            tracker.observeEvent(lastEv.kind, n, lastEv.eventInfo, ...lastEv.moreInfo);
-        })
-        .catch(() => {});
-
-    return {
-        observeEvent: (
-            kind: EventLevelKind,
-            name: string | string[],
-            eventInfo: unknown = undefined,
-            ...moreInfo: unknown[]
-        ) => {
-            if (countEvents === 0) {
-                countEvents = 1;
-                lastEvent = undefined;
-                tracker.observeEvent(kind, name, eventInfo, ...moreInfo);
-                return;
-            }
-            countEvents++;
-            lastEvent = { kind, name, eventInfo, moreInfo };
-        },
-    };
-}

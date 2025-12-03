@@ -2,8 +2,9 @@ import { DelayPromise } from "src/util/DelayPromise";
 import { TrackedOperation } from "./TrackedOperation";
 import { createRandomLetters, RotatingIdGenerator } from "src/util/id_util";
 import type { VirtualConsole } from "../sysutil/ConsoleRedirect";
+import { EventLevelKind, formatEventLevelKind } from "./EventLevelKind";
 
-const FLAG_AVOID_LOGGING_TO_CONSOLE_FOR_CAPTURED_CONSOLE_OUTPUT = false as const;
+const FLAG_AVOID_LOGGING_TO_CONSOLE_FOR_CAPTURED_CONSOLE_OUTPUT = true as const;
 
 export interface ActiveOpsInfo {
     readonly iterator: IterableIterator<[number, TrackedOperation]>;
@@ -48,21 +49,6 @@ const OperationsTrackerConfigDefaults = Object.freeze({
     logBufferCleanStep: 10_000,
     eventDisplayDurationMSec: 3_000,
 });
-
-export enum EventLevelKind {
-    Inf = 1,
-    Wrn = 2,
-    Err = 4,
-    Suc = 8,
-    ConsoleCapture = 512,
-}
-
-// eslint-disable-next-line @typescript-eslint/no-namespace
-export namespace EventLevelKind {
-    export function is(eventLevel: EventLevelKind, isKind: EventLevelKind): boolean {
-        return (eventLevel & isKind) === (isKind as number);
-    }
-}
 
 export const OPERATION_ID_FORMAT_MIN_DIGIT_COUNT = 4 as const;
 
@@ -543,20 +529,4 @@ function formatDate(date: Date) {
     const wkd = date.toLocaleDateString("en-US", { weekday: "short" });
 
     return `${yyyy}-${mm}-${dd}, ${wkd}`;
-}
-
-function formatEventLevelKind(level: EventLevelKind): string {
-    const kindStr = EventLevelKind.is(level, EventLevelKind.ConsoleCapture) ? "🖥️" : "";
-
-    if (EventLevelKind.is(level, EventLevelKind.Inf)) {
-        return kindStr + "ℹ️";
-    } else if (EventLevelKind.is(level, EventLevelKind.Wrn)) {
-        return kindStr + "⚠️";
-    } else if (EventLevelKind.is(level, EventLevelKind.Err)) {
-        return kindStr + "❌";
-    } else if (EventLevelKind.is(level, EventLevelKind.Suc)) {
-        return kindStr + "🟢";
-    } else {
-        return kindStr + "❔";
-    }
 }

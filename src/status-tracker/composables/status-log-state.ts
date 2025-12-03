@@ -1,7 +1,9 @@
 import { ref, shallowReadonly } from "vue";
 import type { ActiveOpsInfo, LogEntry } from "../models/OperationsTracker";
-import { EventLevelKind, OperationsTracker } from "../models/OperationsTracker";
+import { OperationsTracker } from "../models/OperationsTracker";
 import { captureConsoleToTracker } from "./console-to-tracker-capture";
+import { EventLevelKind } from "../models/EventLevelKind";
+import { captureWindowErrorsToTracker } from "./window-error-to-tracker-capture";
 
 const FLAG_VALIDATE_LOG_PRUNING = true as const;
 
@@ -57,6 +59,7 @@ const statusView = ref<string>("");
 
 const statusViewType = ref<StatusViewType>("CurrentState");
 const captureConsole = ref<boolean>(false);
+const captureWindowErr = ref<boolean>(false);
 const writeToConsole = ref<boolean>(false);
 
 const displayMode = ref<StatusDisplayMode>("DuringImportantOperations");
@@ -66,6 +69,7 @@ const isDisplayRequired = ref<boolean>(false);
 // Private state:
 
 let _cancelConsoleCaptureFunc: (() => boolean) | null = null;
+let _cancelWindowErrCaptureFunc: (() => boolean) | null = null;
 
 // Getters:
 
@@ -86,7 +90,7 @@ const setStatusViewType = (viewType: StatusViewType): void => {
 };
 
 const setCaptureConsole = (capture: boolean): void => {
-    //console.debug(`LogStore.setCaptureConsole(${capture}): prevVal=${captureConsole.value}`);
+    //console.debug(`StatusLogState.setCaptureConsole(${capture}): prevVal=${captureConsole.value}`);
 
     if (captureConsole.value === capture) {
         return;
@@ -107,12 +111,38 @@ const setCaptureConsole = (capture: boolean): void => {
         _cancelConsoleCaptureFunc = null;
     }
 
-    //console.debug(`LogStore.setCaptureConsole: setting captureConsole.value to ${capture}`);
+    //console.debug(`StatusLogState.setCaptureConsole: setting captureConsole.value to ${capture}`);
     captureConsole.value = capture;
 };
 
+const setCaptureWindowErr = (capture: boolean): void => {
+    //console.debug(`StatusLogState.setCaptureWindowErr(${capture}): prevVal=${captureWindowErr.value}`);
+
+    if (captureWindowErr.value === capture) {
+        return;
+    }
+
+    if (capture === true) {
+        // If there is a stale cancel-capture func, execute it before setting up a new capture:
+        if (_cancelWindowErrCaptureFunc !== null) {
+            _cancelWindowErrCaptureFunc();
+        }
+
+        const captureHandle = captureWindowErrorsToTracker(opTracker, { errors: true, unhandledRejection: true });
+        _cancelWindowErrCaptureFunc = () => captureHandle.cancel();
+    } else {
+        if (_cancelWindowErrCaptureFunc !== null) {
+            _cancelWindowErrCaptureFunc();
+        }
+        _cancelWindowErrCaptureFunc = null;
+    }
+
+    //console.debug(`StatusLogState.setCaptureWindowErr: setting captureWindowErr.value to ${capture}`);
+    captureWindowErr.value = capture;
+};
+
 const setWriteToConsole = (write: boolean): void => {
-    //console.debug(`LogStore.setWriteToConsole(${write}): prevVal=${writeToConsole.value}`);
+    //console.debug(`StatusLogState.setWriteToConsole(${write}): prevVal=${writeToConsole.value}`);
 
     if (writeToConsole.value === write) {
         return;
@@ -124,7 +154,7 @@ const setWriteToConsole = (write: boolean): void => {
 
     opTracker.config.writeToConsole = write;
 
-    //console.debug(`LogStore.setWriteToConsole: setting writeToConsole.value to ${write}`);
+    //console.debug(`StatusLogState.setWriteToConsole: setting writeToConsole.value to ${write}`);
     writeToConsole.value = write;
 
     if (write) {
@@ -247,6 +277,7 @@ const statusLogState = {
 
     statusViewType: shallowReadonly(statusViewType),
     captureConsole: shallowReadonly(captureConsole),
+    captureWindowErr: shallowReadonly(captureWindowErr),
     writeToConsole: shallowReadonly(writeToConsole),
 
     displayMode: shallowReadonly(displayMode),
@@ -257,6 +288,7 @@ const statusLogState = {
 
     setStatusViewType,
     setCaptureConsole,
+    setCaptureWindowErr,
     setWriteToConsole,
     setDisplayMode,
     setImportantOperationOngoing,
@@ -274,6 +306,7 @@ opTracker.config.operationsListener = statusLogState;
 statusLogState.setDisplayMode("Always");
 statusLogState.setStatusViewType("FullLog");
 statusLogState.setCaptureConsole(true);
+statusLogState.setCaptureWindowErr(true);
 statusLogState.setWriteToConsole(true);
 
 export function useStatusLogState() {
