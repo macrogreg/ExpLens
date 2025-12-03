@@ -4,6 +4,8 @@ import { isNotNullOrWhitespaceStr, isNullOrWhitespace } from "src/util/string_ut
 import { getTagGroups, getTagValues, TagGroupSeparator, type TagValuesCollection } from "./tags";
 import type { SyncContext } from "./sync-driver";
 import { IndexedMap } from "./IndexedMap";
+import { useStatusLog } from "src/status-tracker/composables/status-log";
+import { EventLevelKind } from "src/status-tracker/models/EventLevelKind";
 
 export interface Transaction {
     trn: Lunch.Transaction;
@@ -339,7 +341,8 @@ export function getTagColumnsPosition() {
         return p;
     }
 
-    console.warn(
+    useStatusLog().tracker.observeEvent(
+        EventLevelKind.Wrn,
         `The 'transactionColumnsSpecs' should contain '${TagColumnsPlaceholder}',` +
             ` but it does not. A graceful fallback will be used, but this should be addressed!`
     );
@@ -443,7 +446,8 @@ async function setAllStopValidationRule(
         try {
             // This is such a treacherous bug is it happens, hard to diagnose. Be defensive.
             if (validation.prompt.message.length > 230) {
-                console.warn(
+                useStatusLog().tracker.observeError(
+                    "setAllStopValidationRule: validation Prompt message is too long",
                     `About to fail:\n` +
                         ` The length of 'validation.prompt.message'` +
                         ` MUST be <= 255, and SHOULD be <= 230 to leave space for Excel's postfixes.` +
@@ -474,7 +478,8 @@ async function setAllStopValidationRule(
         try {
             if (validation.errorAlert.message.length > 230) {
                 // This is such a treacherous bug is it happens, hard to diagnose. Be defensive.
-                console.warn(
+                useStatusLog().tracker.observeError(
+                    "setAllStopValidationRule: validation Error Alert message is too long",
                     `About to fail:\n` +
                         ` The length of 'validation.errorAlert.message'` +
                         ` MUST be <= 255, and SHOULD be <= 230 to leave space for Excel's postfixes.` +

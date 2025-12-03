@@ -111,11 +111,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
-import { formatDateLocal, formatDateTimeLocalLong } from "src/util/format_util";
+import { formatDateLocal, formatDateTimeLocalLong, formatValue } from "src/util/format_util";
 import { QInput } from "quasar";
 import { useOffice } from "src/composables/office-ready";
 import { type AppSettings, useSettings } from "src/composables/settings";
 import { downloadData } from "src/business/sync-driver";
+import { useOpTracker } from "src/status-tracker/composables/status-log";
 
 const officeApiInitErrorMsg = ref("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
@@ -168,38 +169,48 @@ function confirmPersistApiTokenDialog(choice: "yes" | "no") {
 }
 
 onMounted(async () => {
-    console.debug("ExpLens Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
-
+    const op = useOpTracker().startOperation("ExpLens Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
     try {
-        officeApiEnvInfo.value = await useOffice(true);
-    } catch (err) {
-        if (err instanceof Error) {
-            officeApiInitErrorMsg.value = err.message;
-        } else {
-            const errMsg = "Unexpected error while getting office APIs ready. AddIn will not work.";
-            console.error(errMsg, err);
-            officeApiInitErrorMsg.value = errMsg;
+        try {
+            officeApiEnvInfo.value = await useOffice(true);
+        } catch (err) {
+            if (err instanceof Error) {
+                officeApiInitErrorMsg.value = err.message;
+            } else {
+                officeApiInitErrorMsg.value = "Unexpected error while getting office APIs ready: " + formatValue(err);
+            }
+            op.setFailure("Error getting office APIs ready. AddIn will not work!", {
+                message: officeApiInitErrorMsg.value,
+                error: err,
+            });
+            console.error("Error getting office APIs ready. AddIn will not work!", {
+                message: officeApiInitErrorMsg.value,
+                error: err,
+            });
+            return;
         }
-        return;
+
+        officeApiInitErrorMsg.value = "";
+
+        appSettings = await useSettings();
+
+        const apiTokenSetting = appSettings.apiToken;
+        apiToken.value = apiTokenSetting.value ?? "";
+        hasPersistApiTokenPermissionData.value = apiToken.value.length > 0;
+
+        // UI → settings:
+        watch(apiToken, (newVal) => {
+            apiTokenSetting.value = newVal;
+        });
+
+        // settings → UI:
+        watch(apiTokenSetting, (newVal) => {
+            apiToken.value = newVal ?? "";
+        });
+        op.setSuccess();
+    } catch (err) {
+        op.setFailureAndRethrow(err);
     }
-
-    officeApiInitErrorMsg.value = "";
-
-    appSettings = await useSettings();
-
-    const apiTokenSetting = appSettings.apiToken;
-    apiToken.value = apiTokenSetting.value ?? "";
-    hasPersistApiTokenPermissionData.value = apiToken.value.length > 0;
-
-    // UI → settings:
-    watch(apiToken, (newVal) => {
-        apiTokenSetting.value = newVal;
-    });
-
-    // settings → UI:
-    watch(apiTokenSetting, (newVal) => {
-        apiToken.value = newVal ?? "";
-    });
 });
 
 function getDefaultSyncStartDate(today: Date) {

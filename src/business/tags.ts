@@ -12,6 +12,7 @@ import type { Tag } from "./lunchmoney-types";
 import { strcmp } from "src/util/string_util";
 import type { SyncContext } from "./sync-driver";
 import { useSheetProgressTracker } from "src/composables/sheet-progress-tracker";
+import { useStatusLog } from "src/status-tracker/composables/status-log";
 
 export const SheetNameTags = "EL.Tags";
 const TableNameTags = "EL.TagsTable";
@@ -88,6 +89,7 @@ export async function downloadTags(context: SyncContext) {
     const errorMsgRange = errorMsgBackgroundRange.getCell(0, 0);
     await context.excel.sync();
 
+    const opDownloadTags = useStatusLog().tracker.startOperation("Download Tags");
     try {
         tagsSheetProgressTracker.setPercentage(5);
 
@@ -150,7 +152,7 @@ export async function downloadTags(context: SyncContext) {
                       tbl.name = TableNameTags;
                       tbl.style = "TableStyleMedium10"; // e.g."TableStyleMedium2", "TableStyleDark1", "TableStyleLight9" ...
                       await context.excel.sync();
-                      console.debug(`New Tags table '${TableNameTags}' created.`);
+                      opDownloadTags.addInfo(`New Tags table '${TableNameTags}' created.`);
                       return tbl;
                   })();
 
@@ -189,7 +191,7 @@ export async function downloadTags(context: SyncContext) {
             const tagsTableRange = tagsTable.getRange();
             tagsTableRange.load("address");
             await context.excel.sync();
-            console.debug(
+            opDownloadTags.addInfo(
                 `Tags table "${TableNameTags}" is located at "${tagsTableRange.address}",` +
                     ` it has ${tagsTable.columns.count} columns and ${tagsTable.rows.count} row(s).`
             );
@@ -252,7 +254,7 @@ export async function downloadTags(context: SyncContext) {
         getRangeBasedOn(context.sheets.tags, tagsTableOffs, -3, 0, 1, 1).values = [["LunchMoney Tags"]];
         await context.excel.sync();
 
-        console.log(`Tags table has ${tagsTable.rows.count} rows after the refresh.`);
+        opDownloadTags.addInfo(`Tags table has ${tagsTable.rows.count} rows after the refresh.`);
 
         tagsSheetProgressTracker.setPercentage(75);
 
@@ -305,7 +307,7 @@ export async function downloadTags(context: SyncContext) {
             const groupNameRangeSheetAddr = parseOnSheetAddress(groupNameRange.address);
             const groupListRangeAbsoluteAddr = formatCellAddressAsAbsolute(groupListRange.address);
             context.tags.groupListFormulaLocations.set(groupName, groupListRangeAbsoluteAddr);
-            // console.debug(
+            // opDownloadTags.addInfo(
             //     `Tag Group #${g}: groupNameRangeSheetAddr='${groupNameRangeSheetAddr}';` +
             //         ` groupListRangeAbsoluteAddr='${groupListRangeAbsoluteAddr}'.`
             // );
@@ -353,14 +355,14 @@ export async function downloadTags(context: SyncContext) {
         tagGroupsTable.name = TableNameTagGroups;
         tagGroupsTable.style = "TableStyleMedium10"; // e.g."TableStyleMedium2", "TableStyleDark1", "TableStyleLight9" ...
         await context.excel.sync();
-        console.debug(`New Tags Groups table '${TableNameTagGroups}' created.`);
+        opDownloadTags.addInfo(`New Tags Groups table '${TableNameTagGroups}' created.`);
 
         tagsSheetProgressTracker.setPercentage(100);
+        opDownloadTags.setSuccess();
     } catch (err) {
-        console.error(err);
         errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];
         errorMsgRange.format.font.color = "#FF0000";
         await context.excel.sync();
-        throw err;
+        opDownloadTags.setFailureAndRethrow(err);
     }
 }

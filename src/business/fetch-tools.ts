@@ -1,8 +1,10 @@
 import { errorTypeMessageString } from "src/util/format_util";
 import { isNotNullOrWhitespaceStr } from "src/util/string_util";
 import { useSettings } from "src/composables/settings";
+import { useStatusLog } from "src/status-tracker/composables/status-log";
+import { type TrackedOperation } from "src/status-tracker/models/TrackedOperation";
 
-export async function badResponseToConsole(response: Response, purposeDescription: string | null) {
+async function logBadResponse(response: Response, purposeDescription: string | null, opFetch: TrackedOperation) {
     let responseText: string;
     let hasResponseText = false;
     try {
@@ -22,27 +24,26 @@ export async function badResponseToConsole(response: Response, purposeDescriptio
     }
 
     const purpDescr = purposeDescription ? `(${purposeDescription}) ` : "";
-    console.error(
-        `Request ${purpDescr}failed with status ${response.status} (${response.statusText}).`,
-        "Response Text:",
+    opFetch.setFailure(`Request ${purpDescr}failed with status ${response.status} (${response.statusText}).`, {
         responseText,
-        "Response Object:",
-        responseObject
-    );
+        responseObject,
+    });
 }
 
 export async function authorizedFetch(method: string, api: string, purposeDescription: string): Promise<string> {
-    const apiToken = (await useSettings()).apiToken.value;
-
-    if (!isNotNullOrWhitespaceStr(apiToken)) {
-        throw new Error(`Cannot '${purposeDescription}', because no API Token is set.`);
-    }
-
-    const headers = new Headers();
-    headers.append("Authorization", `Bearer ${apiToken}`);
-    const requestUrl = `https://dev.lunchmoney.app/v1/${api}`;
+    const opFetch = useStatusLog().tracker.startOperation(`FETCH: ${purposeDescription}`, { method, api });
 
     try {
+        const apiToken = (await useSettings()).apiToken.value;
+
+        if (!isNotNullOrWhitespaceStr(apiToken)) {
+            throw new Error(`Cannot '${purposeDescription}', because no API Token is set.`);
+        }
+
+        const headers = new Headers();
+        headers.append("Authorization", `Bearer ${apiToken}`);
+        const requestUrl = `https://dev.lunchmoney.app/v1/${api}`;
+
         const response = await fetch(requestUrl, {
             method,
             headers,
@@ -50,14 +51,15 @@ export async function authorizedFetch(method: string, api: string, purposeDescri
         });
 
         if (!response.ok) {
-            await badResponseToConsole(response, purposeDescription);
+            await logBadResponse(response, purposeDescription, opFetch);
             throw new Error(`Bad response (${response.status}) during '${purposeDescription}'.`);
         }
 
         const responseText = await response.text();
+
+        opFetch.setSuccess();
         return responseText;
     } catch (err) {
-        console.error(`Fetch error during ${method} /${api} (${purposeDescription}).`, err);
-        throw err;
+        return opFetch.setFailureAndRethrow(err, { method, api, purposeDescription });
     }
 }

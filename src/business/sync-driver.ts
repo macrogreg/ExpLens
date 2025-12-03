@@ -48,9 +48,9 @@ export async function downloadData(
 
     const opDownloadData = statusLog.tracker.startOperation("Download Data", {
         replaceExistingTransactions,
-        startDate,
-        endDate,
     });
+    opDownloadData.addInfo({ startDate, endDate });
+
     let prevImportantOperationOngoing = true;
     try {
         isSyncInProgress = true;

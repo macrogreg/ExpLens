@@ -19,6 +19,7 @@ import type * as Lunch from "./lunchmoney-types";
 import { IndexedMap } from "./IndexedMap";
 import type { SyncContext } from "./sync-driver";
 import { useSheetProgressTracker } from "src/composables/sheet-progress-tracker";
+import { useOpTracker } from "src/status-tracker/composables/status-log";
 
 export const SheetNameTransactions = "EL.Transactions";
 const TableNameTransactions = "EL.TransactionsTable";
@@ -346,6 +347,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
     const errorMsgRange = errorMsgBackgroundRange.getCell(0, 0);
     await context.excel.sync();
 
+    const opDownloadTrans = useOpTracker().startOperation("Download Transactions");
     try {
         transSheetProgressTracker.setPercentage(5);
         await printSheetHeaders(context);
@@ -800,11 +802,11 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         await context.excel.sync();
 
         transSheetProgressTracker.setPercentage(100);
+        opDownloadTrans.setSuccess();
     } catch (err) {
-        console.error(err);
         errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];
         errorMsgRange.format.font.color = "#FF0000";
         await context.excel.sync();
-        throw err;
+        opDownloadTrans.setFailureAndRethrow(err);
     }
 }

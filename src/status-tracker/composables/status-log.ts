@@ -314,3 +314,7 @@ statusLogState.setWriteToConsole(true);
 export function useStatusLog() {
     return statusLogState;
 }
+
+export function useOpTracker() {
+    return useStatusLog().tracker;
+}

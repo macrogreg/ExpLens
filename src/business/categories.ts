@@ -7,6 +7,7 @@ import type { Category } from "./lunchmoney-types";
 import type { SyncContext } from "./sync-driver";
 import { useSheetProgressTracker } from "src/composables/sheet-progress-tracker";
 import { IndexedMap } from "./IndexedMap";
+import { useOpTracker } from "src/status-tracker/composables/status-log";
 
 export const SheetNameCategories = "EL.Categories";
 const TableNameCategories = "EL.CategoriesTable";
@@ -87,6 +88,7 @@ export async function downloadCategories(context: SyncContext) {
     const errorMsgRange = errorMsgBackgroundRange.getCell(0, 0);
     await context.excel.sync();
 
+    const opDownloadCategories = useOpTracker().startOperation("Download Categories");
     try {
         catsSheetProgressTracker.setPercentage(2);
 
@@ -328,11 +330,11 @@ export async function downloadCategories(context: SyncContext) {
         await context.excel.sync();
 
         catsSheetProgressTracker.setPercentage(100);
+        opDownloadCategories.setSuccess();
     } catch (err) {
-        console.error(err);
         errorMsgRange.values = [[`ERR: ${errorTypeMessageString(err)}`]];
         errorMsgRange.format.font.color = "#FF0000";
         await context.excel.sync();
-        throw err;
+        opDownloadCategories.setFailureAndRethrow(err);
     }
 }
