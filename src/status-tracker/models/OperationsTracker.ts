@@ -469,7 +469,7 @@ export class OperationsTracker {
         opCreateBulk.setSuccess(phaseBreaks);
     };
 
-    // reateBulkDummyOperations = async (count: number): Promise<void> => {
+    // createBulkDummyOperations = async (count: number): Promise<void> => {
     //     const opCreateBulk = this.startOperation("createBulkDummyOperations", { count });
     //     for (let i = 1; i <= count; i++) {
     //         const op = this.startOperation(`Bulk Dummy operation ${i}.`, opCreateBulk.getDurationStr());

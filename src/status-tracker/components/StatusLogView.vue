@@ -1,6 +1,6 @@
 <template>
     <div v-if="!statusLog.isDisplayRequired.value" class="status-log-show-trigger">
-        <q-btn flat dense round size="sm" icon="expand_less" @click="statusLog.setDisplayMode('Always')" />
+        <q-btn flat dense round size="sm" icon="expand_less" @click="statusLogProxy.alwaysDisplay = true" />
     </div>
     <div v-if="statusLog.isDisplayRequired.value" class="status-log-container">
         <div
@@ -596,30 +596,35 @@ watch(
     () => statusLogProxy.alwaysDisplay,
     (newVal: boolean) => {
         statusLog.setDisplayMode(newVal ? "Always" : "DuringImportantOperations");
+        statusLog.saveToLocalStorage();
     }
 );
 watch(
     () => statusLogProxy.statusViewType,
     (newVal) => {
         statusLog.setStatusViewType(newVal);
+        statusLog.saveToLocalStorage();
     }
 );
 watch(
     () => statusLogProxy.captureConsole,
     (newVal) => {
         statusLog.setCaptureConsole(newVal);
+        statusLog.saveToLocalStorage();
     }
 );
 watch(
     () => statusLogProxy.captureWindowErr,
     (newVal) => {
         statusLog.setCaptureWindowErr(newVal);
+        statusLog.saveToLocalStorage();
     }
 );
 watch(
     () => statusLogProxy.writeToConsole,
     (newVal) => {
         statusLog.setWriteToConsole(newVal);
+        statusLog.saveToLocalStorage();
     }
 );
 
@@ -654,6 +659,7 @@ watch(statusLog.writeToConsole, (newVal) => {
 //         (viewType) => {
 //             //console.debug(`LogView: SettingsStore.ViewType => ${viewType} => LogStore.ViewType`);
 //             statusLog.setStatusViewType(viewType);
+//             statusLog.saveToLocalStorage();
 //         },
 //         { immediate: true }
 //     );
@@ -663,6 +669,7 @@ watch(statusLog.writeToConsole, (newVal) => {
 //         (captureConsole) => {
 //             //console.debug(`LogView: SettingsStore.CaptureConsole => ${captureConsole} => LogStore.CaptureConsole`);
 //             statusLog.setCaptureConsole(captureConsole);
+//             statusLog.saveToLocalStorage();
 //         },
 //         { immediate: true }
 //     );
@@ -672,6 +679,7 @@ watch(statusLog.writeToConsole, (newVal) => {
 //         (writeToConsole) => {
 //             //console.debug(`LogView: SettingsStore.WriteToConsole => ${writeToConsole} => LogStore.WriteToConsole`);
 //             statusLog.setWriteToConsole(writeToConsole);
+//             statusLog.saveToLocalStorage();
 //         },
 //         { immediate: true }
 //     );

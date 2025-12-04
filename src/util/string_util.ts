@@ -54,6 +54,14 @@ export function containsAtLeastN(haystack: string, needle: string, n: number): b
     return false;
 }
 
+/** Takes a value of type `null | undefined | string | String` and returns `true` IFF the value is one of:
+ *  - `null`
+ *  - `undefined`
+ *  - of type `string` or `[object String]` and is empty when trimmed.
+ *
+ * Compare with `isNullOrWhitespaceStr`, which performs the same check,
+ * but takes a value of any type and asserts that it is one of the 4 types above.
+ */
 // eslint-disable-next-line @typescript-eslint/no-wrapper-object-types
 export function isNullOrWhitespace(s: null | undefined | string | String): boolean {
     if (s === null) return true;
@@ -66,6 +74,15 @@ export function isNullOrWhitespace(s: null | undefined | string | String): boole
     return false;
 }
 
+/** Takes a value `s` of ANY type and returns `true` IFF the `s` is one of:
+ *  - `null`
+ *  - `undefined`
+ *  - of type `string` or `[object String]` and is empty when trimmed.
+ *
+ * This function is a type guard to ensure that `s` is on of the four above types.
+ * Compare with `isNullOrWhitespace`, which performs the same check,
+ * but requires `s` to already be of any of those types.
+ */
 // eslint-disable-next-line @typescript-eslint/no-wrapper-object-types
 export function isNullOrWhitespaceStr(s: unknown): s is null | undefined | string | String {
     if (s === null) return true;

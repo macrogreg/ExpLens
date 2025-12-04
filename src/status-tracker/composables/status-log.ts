@@ -4,6 +4,7 @@ import { OperationsTracker } from "../models/OperationsTracker";
 import { captureConsoleToTracker } from "./console-to-tracker-capture";
 import { EventLevelKind } from "../models/EventLevelKind";
 import { captureWindowErrorsToTracker } from "./window-error-to-tracker-capture";
+import { isNullOrWhitespace } from "src/util/string_util";
 
 const FLAG_VALIDATE_LOG_PRUNING = true as const;
 
@@ -31,6 +32,107 @@ export type StatusDisplayMode = keyof typeof StatusDisplayModes;
 export function rebuildFullLogView(loggedOps: ReadonlyArray<LogEntry>) {
     const view = loggedOps.map((lo) => lo.entry).join("\n");
     return view;
+}
+
+const DefaultStatusLogSettingsLocalStorageKey = "StatusLogAndOperationsTracker.Settings" as const;
+
+function saveStateToBrowserLocalStorage(state: typeof statusLogState, storeKey: string): boolean {
+    const opStoreLogSettings = statusLogState.tracker.startOperation(
+        `Store Status Log settings in Browser Local Storage key "${storeKey}"`
+    );
+
+    try {
+        if (!("localStorage" in globalThis)) {
+            throw new Error("Cannot store statusLogState in localStorage: Storage is not available.");
+        }
+
+        if (isNullOrWhitespace(storeKey)) {
+            throw new Error(`Cannot store statusLogState in localStorage: storeKey is invalid ("${storeKey}").`);
+        }
+
+        const settingsJson = JSON.stringify(
+            {
+                statusViewType: state.statusViewType.value,
+                captureConsole: state.captureConsole.value,
+                captureWindowErr: state.captureWindowErr.value,
+                writeToConsole: state.writeToConsole.value,
+                displayMode: state.displayMode.value,
+            },
+            undefined,
+            "    "
+        );
+
+        localStorage.setItem(storeKey, settingsJson);
+
+        opStoreLogSettings.setSuccess();
+        return true;
+    } catch (err) {
+        opStoreLogSettings.setFailure(err);
+        return false;
+    }
+}
+
+function loadStateFromBrowserLocalStorage(state: typeof statusLogState, storeKey: string): boolean {
+    const opLoadLogSettings = statusLogState.tracker.startOperation(
+        `Load Status Log settings from Browser Local Storage key "${storeKey}"`
+    );
+
+    try {
+        if (!("localStorage" in globalThis)) {
+            throw new Error("Cannot load statusLogState from localStorage: Storage is not available.");
+        }
+
+        if (isNullOrWhitespace(storeKey)) {
+            throw new Error(`Cannot load statusLogState from localStorage: storeKey is invalid ("${storeKey}").`);
+        }
+
+        const settingsJson = localStorage.getItem(storeKey);
+        if (settingsJson === null) {
+            throw new Error(
+                `Cannot load statusLogState from localStorage: Storage has no entry for key "${storeKey}".`
+            );
+        }
+
+        const settings = JSON.parse(settingsJson);
+        if (settings === null) {
+            throw new Error(
+                `Cannot load statusLogState from localStorage: Parser returned null (JSON="${settingsJson}").`
+            );
+        }
+        if (typeof settings !== "object") {
+            throw new Error(
+                `Cannot load statusLogState from localStorage: Parser returned a on-object (JSON="${settingsJson}").`
+            );
+        }
+
+        opLoadLogSettings.addInfo("Loaded settings to be applied:", settings);
+
+        if ("statusViewType" in settings) {
+            state.setStatusViewType(settings.statusViewType);
+        }
+
+        if ("captureConsole" in settings) {
+            state.setCaptureConsole(settings.captureConsole);
+        }
+
+        if ("captureWindowErr" in settings) {
+            state.setCaptureWindowErr(settings.captureWindowErr);
+        }
+
+        if ("writeToConsole" in settings) {
+            state.setWriteToConsole(settings.writeToConsole);
+        }
+
+        if ("displayMode" in settings) {
+            state.setDisplayMode(settings.displayMode);
+        }
+
+        opLoadLogSettings.setSuccess();
+        return true;
+    } catch (err) {
+        opLoadLogSettings.setFailure(err);
+        return false;
+    }
 }
 
 function rebuildCurrentStateView(activeOps: ActiveOpsInfo): string {
@@ -65,6 +167,8 @@ const writeToConsole = ref<boolean>(false);
 const displayMode = ref<StatusDisplayMode>("DuringImportantOperations");
 const isImportantOperationOngoing = ref<boolean>(false);
 const isDisplayRequired = ref<boolean>(false);
+
+const localStorageKey = ref<string | undefined>(undefined);
 
 // Private state:
 
@@ -149,7 +253,7 @@ const setWriteToConsole = (write: boolean): void => {
     }
 
     if (!write) {
-        opTracker.observeEvent(EventLevelKind.Inf, "Disabling mirroring tracked log to console.");
+        opTracker.observeEvent(EventLevelKind.Inf, "Disabling mirroring log to console.");
     }
 
     opTracker.config.writeToConsole = write;
@@ -158,7 +262,7 @@ const setWriteToConsole = (write: boolean): void => {
     writeToConsole.value = write;
 
     if (write) {
-        opTracker.observeEvent(EventLevelKind.Inf, "Enabled mirroring tracked log to console.");
+        opTracker.observeEvent(EventLevelKind.Inf, "Enabled mirroring log to console.");
     }
 };
 
@@ -168,6 +272,7 @@ const setDisplayMode = (mode: StatusDisplayMode) => {
     }
 
     displayMode.value = mode;
+
     isDisplayRequired.value =
         displayMode.value === "Always" ||
         (displayMode.value === "DuringImportantOperations" && isImportantOperationOngoing.value === true);
@@ -179,6 +284,7 @@ const setImportantOperationOngoing = (isOngoing: boolean) => {
     }
 
     isImportantOperationOngoing.value = isOngoing;
+
     isDisplayRequired.value =
         displayMode.value === "Always" ||
         (displayMode.value === "DuringImportantOperations" && isImportantOperationOngoing.value === true);
@@ -257,6 +363,38 @@ const notifyActiveOpsStackUpdated = (activeOps: ActiveOpsInfo): void => {
     statusView.value = rebuildCurrentStateView(activeOps);
 };
 
+const saveToLocalStorage = (storeKey?: string): boolean => {
+    if (storeKey === undefined) {
+        storeKey = localStorageKey.value ?? DefaultStatusLogSettingsLocalStorageKey;
+    }
+
+    if (isNullOrWhitespace(storeKey)) {
+        throw new Error(`The 'storeKey' is invalid ("${storeKey}").`);
+    }
+
+    const r = saveStateToBrowserLocalStorage(statusLogState, storeKey);
+    if (r) {
+        localStorageKey.value = storeKey;
+    }
+    return r;
+};
+
+const loadFromLocalStorage = (storeKey?: string): boolean => {
+    if (storeKey === undefined) {
+        storeKey = localStorageKey.value ?? DefaultStatusLogSettingsLocalStorageKey;
+    }
+
+    if (isNullOrWhitespace(storeKey)) {
+        throw new Error(`The specified 'storeKey' is invalid ("${storeKey}").`);
+    }
+
+    const r = loadStateFromBrowserLocalStorage(statusLogState, storeKey);
+    if (r) {
+        localStorageKey.value = storeKey;
+    }
+    return r;
+};
+
 const statusLogState = {
     // statusViewType: computed({
     //     get: (): StatusViewType => statusViewType.value,
@@ -288,6 +426,8 @@ const statusLogState = {
     isImportantOperationOngoing: shallowReadonly(isImportantOperationOngoing),
     isDisplayRequired: shallowReadonly(isDisplayRequired),
 
+    localStorageKey: shallowReadonly(localStorageKey),
+
     setStatusViewType,
     setCaptureConsole,
     setCaptureWindowErr,
@@ -299,17 +439,31 @@ const statusLogState = {
     notifyLogEntriesDeleted,
     notifyLogEntriesRevised,
     notifyActiveOpsStackUpdated,
+
+    saveToLocalStorage,
+    loadFromLocalStorage,
 };
 
 opTracker.config.operationsListener = statusLogState;
 
-// Default setting must be applied after everything else is initialized,
-// so that the side effects of the respective setters can be executed:
-statusLogState.setDisplayMode("Always");
-statusLogState.setStatusViewType("FullLog");
-statusLogState.setCaptureConsole(true);
-statusLogState.setCaptureWindowErr(true);
-statusLogState.setWriteToConsole(true);
+// Apply default settings:
+// (must be applied after everything else is initialized, so that the setters' side effects can be executed)
+
+// Load from browser local storage using default key:
+// (if key not found, it will fail gracefully and keep default settings)
+const settingsLoadedAtModuleInit = statusLogState.loadFromLocalStorage();
+
+// If not loaded from storage, apply default values:
+// (applying them will also put them into local storage)
+if (!settingsLoadedAtModuleInit) {
+    statusLogState.setDisplayMode("DuringImportantOperations");
+    statusLogState.setStatusViewType("CurrentState");
+    statusLogState.setCaptureConsole(true);
+    statusLogState.setCaptureWindowErr(true);
+    statusLogState.setWriteToConsole(true);
+}
+
+// Main module API entry points:
 
 export function useStatusLog() {
     return statusLogState;
