@@ -481,6 +481,8 @@ function startDragResize(ev: MouseEvent | TouchEvent) {
         document.removeEventListener("touchmove", moveHandler);
         document.removeEventListener("mouseup", upHandler);
         document.removeEventListener("touchend", upHandler);
+
+        statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(false);
     };
 
     const moveHandler = (ev: MouseEvent | TouchEvent) => {
@@ -506,6 +508,8 @@ function startDragResize(ev: MouseEvent | TouchEvent) {
         statusLogAreaHeight.value = adjustedAreaHeight;
         //console.debug(`LogView.startDragResize.moveHandler: height=${statusLogAreaHeight.value}.`);
     };
+
+    statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(true);
 
     document.addEventListener("mousemove", moveHandler);
     document.addEventListener("touchmove", moveHandler);
@@ -553,6 +557,13 @@ function triggerJumpResize() {
             // const ts = Date.now();
             // console.debug("LogView.triggerJumpResize.stepFrameFunction: TotalTime=", ts - firstTs);
 
+            // Wait for 100ms and for one tick after that, then stop the ResizeObserverLoop error suppression:
+            setTimeout(() => {
+                void nextTick(() => {
+                    statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(false);
+                });
+            }, 100);
+
             isJumpResizeInProgress = false;
             return;
         }
@@ -576,11 +587,11 @@ function triggerJumpResize() {
         setTimeout(stepFrameFunction, nextDurationMs);
     };
 
+    statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(true);
     setTimeout(stepFrameFunction, jumpResizeConfig_DurationMs / remainSteps);
 }
 
 const statusLog = useStatusLog();
-
 // console.debug(`StatusLogView:", " statusLog:`, statusLog);
 
 // Local refs for statusLog - needed for proper reactivity in dropdown portal

@@ -10,6 +10,7 @@ export type WindowErrCaptureHandle = {
     /** The cancel() function may be called several times, but the cancellation can obviously occur only
      * once. It returns `true` on the first call the the capturing is actually cancelled, and `false` otherwise. */
     cancel: () => boolean;
+    setSuppressHandlingResizeObserverLoopErrors: (suppress: boolean) => void;
 };
 
 const CaptureKindIcon = formatEventLevelCaptureKind(EventLevelKind.WindowErrCapture);
@@ -22,6 +23,8 @@ export function captureWindowErrorsToTracker(
 ): WindowErrCaptureHandle {
     const captureOptions = { ...options };
 
+    let suppressHandlingResizeObserverLoopErrors = false;
+
     const errorEventHandler = (event: ErrorEvent) => {
         const evTyp = "type" in event ? event.type : "UnknownEventType";
         const evMsg = "message" in event ? event.message : "<No Message>";
@@ -31,6 +34,10 @@ export function captureWindowErrorsToTracker(
         const trackEvKind = EventLevelKind.Err | EventLevelKind.WindowErrCapture;
 
         if (accumulator_ResizeObserverLoopCommonError.isApplicable(event)) {
+            if (suppressHandlingResizeObserverLoopErrors) {
+                return;
+            }
+
             const acc = accumulator_ResizeObserverLoopCommonError.getAccumulator(tracker);
             acc.observeEvent(trackEvKind, evDesc, errDesc, event);
             return;
@@ -92,6 +99,10 @@ export function captureWindowErrorsToTracker(
             isCaptureCancelled = true;
 
             return true;
+        },
+
+        setSuppressHandlingResizeObserverLoopErrors: (suppress: boolean) => {
+            suppressHandlingResizeObserverLoopErrors = suppress;
         },
     };
 

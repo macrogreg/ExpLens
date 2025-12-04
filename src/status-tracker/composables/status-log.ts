@@ -1,8 +1,10 @@
 import { ref, shallowReadonly } from "vue";
 import type { ActiveOpsInfo, LogEntry } from "../models/OperationsTracker";
 import { OperationsTracker } from "../models/OperationsTracker";
+import type { ConsoleCaptureHandle } from "./console-to-tracker-capture";
 import { captureConsoleToTracker } from "./console-to-tracker-capture";
 import { EventLevelKind } from "../models/EventLevelKind";
+import type { WindowErrCaptureHandle } from "./window-error-to-tracker-capture";
 import { captureWindowErrorsToTracker } from "./window-error-to-tracker-capture";
 import { isNullOrWhitespace } from "src/util/string_util";
 
@@ -172,8 +174,8 @@ const localStorageKey = ref<string | undefined>(undefined);
 
 // Private state:
 
-let _cancelConsoleCaptureFunc: (() => boolean) | null = null;
-let _cancelWindowErrCaptureFunc: (() => boolean) | null = null;
+let _consoleCaptureHandle: ConsoleCaptureHandle | null = null;
+let _windowErrCaptureHandle: WindowErrCaptureHandle | null = null;
 
 // Getters:
 
@@ -200,19 +202,15 @@ const setCaptureConsole = (capture: boolean): void => {
         return;
     }
 
-    if (capture === true) {
-        // If there is a stale cancel-capture func, execute it before setting up a new capture:
-        if (_cancelConsoleCaptureFunc !== null) {
-            _cancelConsoleCaptureFunc();
-        }
+    // If there is a stale cancel-capture func, execute it before setting up a new capture:
+    if (_consoleCaptureHandle !== null) {
+        _consoleCaptureHandle.cancel();
+    }
 
-        const captureHandle = captureConsoleToTracker(opTracker);
-        _cancelConsoleCaptureFunc = () => captureHandle.cancel();
+    if (capture === true) {
+        _consoleCaptureHandle = captureConsoleToTracker(opTracker);
     } else {
-        if (_cancelConsoleCaptureFunc !== null) {
-            _cancelConsoleCaptureFunc();
-        }
-        _cancelConsoleCaptureFunc = null;
+        _consoleCaptureHandle = null;
     }
 
     //console.debug(`StatusLogState.setCaptureConsole: setting captureConsole.value to ${capture}`);
@@ -226,19 +224,15 @@ const setCaptureWindowErr = (capture: boolean): void => {
         return;
     }
 
-    if (capture === true) {
-        // If there is a stale cancel-capture func, execute it before setting up a new capture:
-        if (_cancelWindowErrCaptureFunc !== null) {
-            _cancelWindowErrCaptureFunc();
-        }
+    // If there is a stale cancel-capture func, execute it before setting up a new capture:
+    if (_windowErrCaptureHandle !== null) {
+        _windowErrCaptureHandle.cancel();
+    }
 
-        const captureHandle = captureWindowErrorsToTracker(opTracker, { errors: true, unhandledRejection: true });
-        _cancelWindowErrCaptureFunc = () => captureHandle.cancel();
+    if (capture === true) {
+        _windowErrCaptureHandle = captureWindowErrorsToTracker(opTracker, { errors: true, unhandledRejection: true });
     } else {
-        if (_cancelWindowErrCaptureFunc !== null) {
-            _cancelWindowErrCaptureFunc();
-        }
-        _cancelWindowErrCaptureFunc = null;
+        _windowErrCaptureHandle = null;
     }
 
     //console.debug(`StatusLogState.setCaptureWindowErr: setting captureWindowErr.value to ${capture}`);
@@ -395,6 +389,15 @@ const loadFromLocalStorage = (storeKey?: string): boolean => {
     return r;
 };
 
+/**  An unhandled error "ResizeObserver loop completed with undelivered notifications." can be thrown a lot
+ * within the browser window during resizes. This is a benign error.
+ * To avoid spamming the log, we sometimes need to suppress it.
+ * https://stackoverflow.com/questions/49384120/resizeobserver-loop-limit-exceeded/50387233#50387233 ;
+ * https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver#observation_errors . */
+function setSuppressCaptureWindowErrorResizeObserverLoop(suppress: boolean) {
+    _windowErrCaptureHandle?.setSuppressHandlingResizeObserverLoopErrors(suppress);
+}
+
 const statusLogState = {
     // statusViewType: computed({
     //     get: (): StatusViewType => statusViewType.value,
@@ -442,6 +445,13 @@ const statusLogState = {
 
     saveToLocalStorage,
     loadFromLocalStorage,
+
+    /**  An unhandled error "ResizeObserver loop completed with undelivered notifications." can be thrown a lot
+     * within the browser window during resizes. This is a benign error.
+     * To avoid spamming the log, we sometimes need to suppress it.
+     * https://stackoverflow.com/questions/49384120/resizeobserver-loop-limit-exceeded/50387233#50387233 ;
+     * https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver#observation_errors . */
+    setSuppressCaptureWindowErrorResizeObserverLoop,
 };
 
 opTracker.config.operationsListener = statusLogState;
