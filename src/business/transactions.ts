@@ -20,6 +20,7 @@ import { IndexedMap } from "./IndexedMap";
 import type { SyncContext } from "./sync-driver";
 import { useSheetProgressTracker } from "src/composables/sheet-progress-tracker";
 import { useOpTracker } from "src/status-tracker/composables/status-log";
+import { type TrackedOperation } from "src/status-tracker/models/TrackedOperation";
 
 export const SheetNameTransactions = "EL.Transactions";
 const TableNameTransactions = "EL.TransactionsTable";
@@ -28,47 +29,54 @@ function isColumnNamingEquivalent(
     columnsSpecs: IndexedMap<string, TransactionColumnSpec>,
     actualColumnNames: string[]
 ) {
-    let expC = 0,
-        actC = 0;
-    while (true) {
-        // Skip tag columns during structural comparison:
-        while (expC < columnsSpecs.length && tryGetTagGroupFromColumnName(columnsSpecs.getByIndex(expC)!.name)) {
+    const opCheckColNaming = useOpTracker().startOperation("Validate Transactions table Column names");
+
+    try {
+        let expC = 0,
+            actC = 0;
+        while (true) {
+            // Skip tag columns during structural comparison:
+            while (expC < columnsSpecs.length && tryGetTagGroupFromColumnName(columnsSpecs.getByIndex(expC)!.name)) {
+                expC++;
+            }
+            while (actC < actualColumnNames.length && tryGetTagGroupFromColumnName(actualColumnNames[actC]!)) {
+                actC++;
+            }
+
+            // If both comparison column lists are exhausted, they match:
+            if (expC === columnsSpecs.length && actC === actualColumnNames.length) {
+                opCheckColNaming.setSuccess();
+                return true;
+            }
+
+            // If only of of the comparison column lists is exhausted, they do not match:
+            if (expC === columnsSpecs.length || actC === actualColumnNames.length) {
+                opCheckColNaming.setFailure(
+                    `isColumnNamingEquivalent(..):\n` +
+                        `The lengths of 'columnsSpecs' (${columnsSpecs.length}) and` +
+                        ` actualColumnNames (${actualColumnNames.length}) are different after accounting` +
+                        ` for dynamic tag columns.`
+                );
+                return false;
+            }
+
+            // If col names at current cursors are different, lists do not match:
+            if (columnsSpecs.getByIndex(expC)?.name !== actualColumnNames[actC]) {
+                opCheckColNaming.setFailure(
+                    `isColumnNamingEquivalent(..):\n` +
+                        `After accounting for dynamic tag columns, aligned headers are not the same:\n` +
+                        `columnsSpecs.getByIndex(${expC})?.name !== actualColumnNames[${actC}]` +
+                        ` ('${columnsSpecs.getByIndex(expC)?.name}' !=== '${actualColumnNames[actC]}').`
+                );
+                return false;
+            }
+
+            // Names at current positions match, move cursors forward:
             expC++;
-        }
-        while (actC < actualColumnNames.length && tryGetTagGroupFromColumnName(actualColumnNames[actC]!)) {
             actC++;
         }
-
-        // If both comparison column lists are exhausted, they match:
-        if (expC === columnsSpecs.length && actC === actualColumnNames.length) {
-            return true;
-        }
-
-        // If only of of the comparison column lists is exhausted, they do not match:
-        if (expC === columnsSpecs.length || actC === actualColumnNames.length) {
-            console.error(
-                `isColumnNamingEquivalent(..):\n` +
-                    `The lengths of 'columnsSpecs' (${columnsSpecs.length}) and` +
-                    ` actualColumnNames (${actualColumnNames.length}) are different after accounting` +
-                    ` for dynamic tag columns.`
-            );
-            return false;
-        }
-
-        // If col names at current cursors are different, lists do not match:
-        if (columnsSpecs.getByIndex(expC)?.name !== actualColumnNames[actC]) {
-            console.error(
-                `isColumnNamingEquivalent(..):\n` +
-                    `After accounting for dynamic tag columns, aligned headers are not the same:\n` +
-                    `columnsSpecs.getByIndex(${expC})?.name !== actualColumnNames[${actC}]` +
-                    ` ('${columnsSpecs.getByIndex(expC)?.name}' !=== '${actualColumnNames[actC]}').`
-            );
-            return false;
-        }
-
-        // Names at current positions match, move cursors forward:
-        expC++;
-        actC++;
+    } catch (err) {
+        return opCheckColNaming.setFailureAndRethrow(err);
     }
 }
 
@@ -117,36 +125,41 @@ async function createNewTranTable(
     sheet: Excel.Worksheet,
     context: Excel.RequestContext
 ): Promise<Excel.Table> {
-    // Table location:
-    const tranTableOffs = { row: 7, col: 1 };
+    const opCreateTransTable = useOpTracker().startOperation("Create new Transactions table");
+    try {
+        // Table location:
+        const tranTableOffs = { row: 7, col: 1 };
 
-    // No data is loaded yet. Only use the no-tag-group column for tags initially:
-    const tranSpecColNames = tranColumnsSpecs.map((col) => col.name);
+        // No data is loaded yet. Only use the no-tag-group column for tags initially:
+        const tranSpecColNames = tranColumnsSpecs.map((col) => col.name);
 
-    // Clear the are where we are about to create the table:
-    const tableInitRange = getRangeBasedOn(sheet, tranTableOffs, 0, 0, 2, tranSpecColNames.length);
+        // Clear the are where we are about to create the table:
+        const tableInitRange = getRangeBasedOn(sheet, tranTableOffs, 0, 0, 2, tranSpecColNames.length);
 
-    tableInitRange.clear();
-    tableInitRange.conditionalFormats.clearAll();
-    await context.sync();
+        tableInitRange.clear();
+        tableInitRange.conditionalFormats.clearAll();
+        await context.sync();
 
-    // Print column headers:
-    getRangeBasedOn(sheet, tranTableOffs, 0, 0, 1, tranSpecColNames.length).values = [tranSpecColNames];
+        // Print column headers:
+        getRangeBasedOn(sheet, tranTableOffs, 0, 0, 1, tranSpecColNames.length).values = [tranSpecColNames];
 
-    // Create table:
-    const table = sheet.tables.add(tableInitRange, true);
-    table.name = TableNameTransactions;
-    table.style = "TableStyleMedium9"; // e.g."TableStyleMedium2", "TableStyleDark1", "TableStyleLight9" ...
+        // Create table:
+        const table = sheet.tables.add(tableInitRange, true);
+        table.name = TableNameTransactions;
+        table.style = "TableStyleMedium9"; // e.g."TableStyleMedium2", "TableStyleDark1", "TableStyleLight9" ...
 
-    await context.sync();
+        await context.sync();
 
-    // Load frequently used properties:
-    table.load(["name", "id"]);
-    table.getRange().load(["address"]);
-    await context.sync();
+        // Load frequently used properties:
+        table.load(["name", "id"]);
+        table.getRange().load(["address"]);
+        await context.sync();
 
-    console.debug(`New Transactions table '${table.name}' created.`);
-    return table;
+        opCreateTransTable.setSuccess(`New Transactions table '${table.name}' created.`);
+        return table;
+    } catch (err) {
+        return opCreateTransTable.setFailureAndRethrow(err);
+    }
 }
 
 async function applyColumnFormatting(
@@ -154,46 +167,48 @@ async function applyColumnFormatting(
     tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
     context: SyncContext
 ) {
-    console.debug("Will apply formatting to table columns...");
-    const msStartApplyFormatting = performance.now();
+    const opApplyColsFormat = useOpTracker().startOperation("Apply formatting to table columns");
+    try {
+        for (const tabCol of tranTable.columns.items) {
+            const colName = tabCol.name;
+            const colSpec = tranColumnsSpecs.getByKey(colName);
+            if (colSpec === undefined) {
+                continue;
+            }
 
-    for (const tabCol of tranTable.columns.items) {
-        const colName = tabCol.name;
-        const colSpec = tranColumnsSpecs.getByKey(colName);
-        if (colSpec === undefined) {
-            continue;
-        }
+            const tabColRange = tabCol.getDataBodyRange();
 
-        const tabColRange = tabCol.getDataBodyRange();
+            const numFormat = colSpec.numberFormat;
+            if (numFormat) {
+                tabColRange.numberFormat = [[numFormat]];
+            }
 
-        const numFormat = colSpec.numberFormat;
-        if (numFormat) {
-            tabColRange.numberFormat = [[numFormat]];
-        }
-
-        const formatFn = colSpec.formatFn;
-        if (formatFn) {
-            try {
-                const formatFnRes = formatFn(tabColRange.format, tabColRange.dataValidation, context);
-                await formatFnRes;
-                await context.excel.sync();
-            } catch (err) {
-                console.error(
-                    `The formatFn of the column spec for '${colName}' threw an error.` +
-                        `\n    '${errorTypeMessageString(err)}'` +
-                        `\n\n We will skip over this and continue, but this needs to be corrected.`,
-                    `\n\nERR:\n`,
-                    err
-                );
+            const formatFn = colSpec.formatFn;
+            if (formatFn) {
+                const opColFormat = useOpTracker().startOperation(`Formatting column '${colName}'`);
+                try {
+                    const formatFnRes = formatFn(tabColRange.format, tabColRange.dataValidation, context);
+                    await formatFnRes;
+                    await context.excel.sync();
+                    opColFormat.setSuccess();
+                } catch (err) {
+                    opColFormat.setFailure(
+                        `The formatFn of the column spec for '${colName}' threw an error.` +
+                            `\n    '${errorTypeMessageString(err)}'` +
+                            `\n\n We will skip over this and continue, but this needs to be corrected.`,
+                        `\n\nERR:\n`,
+                        err
+                    );
+                }
             }
         }
+
+        await context.excel.sync();
+
+        opApplyColsFormat.setSuccess();
+    } catch (err) {
+        opApplyColsFormat.setFailureAndRethrow(err);
     }
-
-    await context.excel.sync();
-
-    console.debug(
-        `Formatting applied to table columns.\n    Time taken: ${performance.now() - msStartApplyFormatting} msec.`
-    );
 }
 
 function setEditableHintRangeFormat(range: Excel.Range, editableState: "Read-Only" | "Editable") {
@@ -254,27 +269,49 @@ async function printSheetHeaders(context: SyncContext) {
 }
 
 async function createEditableHintHeader(tranTable: Excel.Table, context: SyncContext) {
-    tranTable.columns.load(["count"]);
-    const tranTableRange = tranTable.getRange();
-    tranTableRange.load(["address", "rowIndex", "columnIndex"]);
-    await context.excel.sync();
+    const opCreateHintHeader = useOpTracker().startOperation(
+        "Create Read-Only vs Editable hint header row for Transactions"
+    );
+    let opHintStep: null | TrackedOperation = null;
 
-    const hintRowOffs = { row: tranTableRange.rowIndex - 1, col: tranTableRange.columnIndex };
-
-    // Create Read-Only vs Editable marker row:
-    const editableColumnNames = new Set<string>(["Category"]);
-    for (const gn of context.tags.assignable.keys()) {
-        editableColumnNames.add(formatTagGroupColumnHeader(gn));
-    }
-
-    for (let c = 0; c < tranTable.columns.count; c++) {
-        const tabCol = tranTable.columns.getItemAt(c);
-        tabCol.load(["name"]);
+    try {
+        tranTable.columns.load(["count"]);
+        const tranTableRange = tranTable.getRange();
+        tranTableRange.load(["address", "rowIndex", "columnIndex"]);
         await context.excel.sync();
 
-        const colKind = editableColumnNames.has(tabCol.name) ? "Editable" : "Read-Only";
-        const colHintCell = getRangeBasedOn(context.sheets.trans, hintRowOffs, 0, c, 1, 1);
-        setEditableHintRangeFormat(colHintCell, colKind);
+        const hintRowOffs = { row: tranTableRange.rowIndex - 1, col: tranTableRange.columnIndex };
+
+        // Create Read-Only vs Editable marker row:
+        const editableColumnNames = new Set<string>(["Category"]);
+        for (const gn of context.tags.assignable.keys()) {
+            editableColumnNames.add(formatTagGroupColumnHeader(gn));
+        }
+
+        for (let c = 0; c < tranTable.columns.count; c++) {
+            const progressUpdateStep = 20;
+            if (c % progressUpdateStep === 0) {
+                opHintStep?.setSuccess();
+                opHintStep = useOpTracker().startOperation(
+                    `Set Read-Only/Editable hint for columns ${c}...${c + progressUpdateStep},` +
+                        ` out of ${tranTable.columns.count}`
+                );
+            }
+
+            const tabCol = tranTable.columns.getItemAt(c);
+            tabCol.load(["name"]);
+            await context.excel.sync();
+
+            const colKind = editableColumnNames.has(tabCol.name) ? "Editable" : "Read-Only";
+            const colHintCell = getRangeBasedOn(context.sheets.trans, hintRowOffs, 0, c, 1, 1);
+            setEditableHintRangeFormat(colHintCell, colKind);
+        }
+
+        opHintStep?.setSuccess();
+        opCreateHintHeader.setSuccess();
+    } catch (err) {
+        opHintStep?.setFailure(err);
+        opCreateHintHeader.setFailureAndRethrow(err);
     }
 }
 
@@ -323,12 +360,80 @@ async function createInfoRow(tranTable: Excel.Table, context: SyncContext) {
     lastCompletedSyncTimeRange.values = [[datetimeToExcel(context.currentSync.utc, true)]];
     lastCompletedSyncTimeRange.numberFormat = [["  yyyy-mm-dd  HH:mm:ss"]];
 
-    console.log(`Current time 1: '${String(context.currentSync.utc)}'`);
-    console.log(`Current time 2: '${String(context.currentSync.utc.toLocaleString())}'`);
-    console.log(`Current time 3: '${String(context.currentSync.utc.toUTCString())}'`);
-    console.log(`Current time 3: '${String(context.currentSync.utc.getTime())}'`);
-
     await context.excel.sync();
+}
+
+async function readExistingTransactions(
+    tranTable: Excel.Table,
+    tranTableColNames: string[],
+    context: SyncContext
+): Promise<IndexedMap<number, TransactionRowData>> {
+    const opReadExistingTrans = useOpTracker().startOperation(
+        `Read ${tranTable.rows.count} existing data rows from '${tranTable.name}'`
+    );
+
+    let opReadStep: null | TrackedOperation = null;
+
+    try {
+        const existingTrans = new IndexedMap<number, TransactionRowData>();
+
+        for (let r = 0; r < tranTable.rows.count; r++) {
+            const progressUpdateStep = 100;
+            if (r % progressUpdateStep === 0) {
+                opReadStep?.setSuccess();
+                opReadStep = useOpTracker().startOperation(
+                    `Read rows ${r}...${r + progressUpdateStep},` +
+                        ` out of ${tranTable.rows.count} from '${tranTable.name}'`
+                );
+            }
+
+            // Load the values of this row:
+            const rowRange = tranTable.rows.getItemAt(r).getRange();
+            rowRange.load(["values", "address"]);
+            await context.excel.sync();
+            const rowRangeValues = rowRange.values[0]!;
+
+            // Build the data object:
+            let isEmptyRow = true;
+            const rowDataValues: Record<string, TransactionRowValue> = {};
+            for (let c = 0; c < rowRangeValues.length; c++) {
+                const colName = tranTableColNames[c]!;
+                if (rowRangeValues[c] === undefined) {
+                    throw new Error(`Column #${c} ('${colName}') not specified for item on row ${r}.`);
+                }
+                if (rowRangeValues[c] !== "") {
+                    isEmptyRow = false;
+                }
+                rowDataValues[colName] = rowRangeValues[c];
+            }
+
+            if (!isEmptyRow) {
+                // Add the object to the loaded collection by ID and by order:
+                const lunchIdStr = rowDataValues[SpecialColumnNames.LunchId];
+                if (!lunchIdStr) {
+                    throw new Error(`${SpecialColumnNames.LunchId} not specified for item on row ${r}.`);
+                }
+                const lunchId = Number(lunchIdStr);
+                if (!Number.isInteger(lunchId)) {
+                    throw new Error(
+                        `Invalid ${SpecialColumnNames.LunchId}-value ('${lunchIdStr}') for item on row ${r}.`
+                    );
+                }
+
+                const rowInfo = { values: rowDataValues, range: rowRange };
+                existingTrans.tryAdd(lunchId, rowInfo);
+            }
+        }
+
+        opReadStep?.setSuccess();
+        opReadExistingTrans.setSuccess(
+            `Done reading ${existingTrans.length} existing data rows from table '${tranTable.name}'.`
+        );
+        return existingTrans;
+    } catch (err) {
+        opReadStep?.setFailure(err);
+        return opReadExistingTrans.setFailureAndRethrow(err);
+    }
 }
 
 export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {
@@ -395,12 +500,19 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         }
 
         // Load the column names actually present in the table:
-        tranTable.columns.load(["count", "items"]);
-        await context.excel.sync();
-        for (const col of tranTable.columns.items) {
-            col.load("name");
+        const opLoadColNames = useOpTracker().startOperation("Load Transactions table column names");
+        try {
+            tranTable.columns.load(["count", "items"]);
+            await context.excel.sync();
+            for (const col of tranTable.columns.items) {
+                col.load("name");
+            }
+            await context.excel.sync();
+
+            opLoadColNames.setSuccess();
+        } catch (err) {
+            opLoadColNames.setFailureAndRethrow(err);
         }
-        await context.excel.sync();
 
         // Cache the actually present Transactions table Column Names:
         const tranTableColNames: string[] = tranTable.columns.items.map((col) => col.name.trim());
@@ -423,86 +535,44 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         transSheetProgressTracker.setPercentage(10);
 
-        // Load the values from the table so that empty rows can be found and deleted:
-        const tranTableBodyRange = tranTable.getDataBodyRange();
-        tranTable.rows.load(["count"]);
-        tranTableBodyRange.load("values");
-        await context.excel.sync();
+        const opDeleteEmptyRows = useOpTracker().startOperation("Delete empty rows from the Transactions table");
+        try {
+            // Load the values from the table so that empty rows can be found and deleted:
+            const tranTableBodyRange = tranTable.getDataBodyRange();
+            tranTable.rows.load(["count"]);
+            tranTableBodyRange.load("values");
+            await context.excel.sync();
 
-        const tranTableRowCount = tranTable.rows.count;
-        const tranTableValues = tranTableBodyRange.values;
+            const tranTableRowCount = tranTable.rows.count;
+            const tranTableValues = tranTableBodyRange.values;
 
-        // Delete empty rows (start from bottom to avoid index shift):
-        let countEmptyRowsDeleted = 0;
-        for (let r = tranTableValues.length - 1; r >= 0; r--) {
-            // If we are at top row and all rows so far were deleted, skip.
-            // This is because tables may never have zero rows.
-            if (r === 0 && countEmptyRowsDeleted === tranTableRowCount - 1) {
-                continue;
+            // Delete empty rows (start from bottom to avoid index shift):
+            let countEmptyRowsDeleted = 0;
+            for (let r = tranTableValues.length - 1; r >= 0; r--) {
+                // If we are at top row and all rows so far were deleted, skip.
+                // This is because tables may never have zero rows.
+                if (r === 0 && countEmptyRowsDeleted === tranTableRowCount - 1) {
+                    continue;
+                }
+                const tranTableValueRow = tranTableValues[r]!;
+                const isRowEmpty = tranTableValueRow.every((val) => isNullOrWhitespace(val));
+                if (isRowEmpty) {
+                    tranTable.rows.getItemAt(r).delete();
+                    countEmptyRowsDeleted++;
+                }
             }
-            const tranTableValueRow = tranTableValues[r]!;
-            const isRowEmpty = tranTableValueRow.every((val) => isNullOrWhitespace(val));
-            if (isRowEmpty) {
-                tranTable.rows.getItemAt(r).delete();
-                countEmptyRowsDeleted++;
-            }
+            tranTable.rows.load(["count", "items"]);
+            await context.excel.sync();
+
+            opDeleteEmptyRows.setSuccess({ countEmptyRowsDeleted });
+        } catch (err) {
+            opDeleteEmptyRows.setFailureAndRethrow(err);
         }
-        tranTable.rows.load(["count", "items"]);
-        await context.excel.sync();
-        console.debug(`Deleted ${countEmptyRowsDeleted} empty rows from table '${tranTable.name}'.`);
 
         transSheetProgressTracker.setPercentage(15);
 
-        // Load data from the table into `existingTrans`:
-
-        console.debug(`Will read ${tranTable.rows.count} existing data rows from '${tranTable.name}'...`);
-        const msStartReadPreexistingData = performance.now();
-
-        const existingTrans = new IndexedMap<number, TransactionRowData>();
-
-        for (let r = 0; r < tranTable.rows.count; r++) {
-            // Load the values of this row:
-            const rowRange = tranTable.rows.getItemAt(r).getRange();
-            rowRange.load(["values", "address"]);
-            await context.excel.sync();
-            const rowRangeValues = rowRange.values[0]!;
-
-            // Build the data object:
-            let isEmptyRow = true;
-            const rowDataValues: Record<string, TransactionRowValue> = {};
-            for (let c = 0; c < rowRangeValues.length; c++) {
-                const colName = tranTableColNames[c]!;
-                if (rowRangeValues[c] === undefined) {
-                    throw new Error(`Column #${c} ('${colName}') not specified for item on row ${r}.`);
-                }
-                if (rowRangeValues[c] !== "") {
-                    isEmptyRow = false;
-                }
-                rowDataValues[colName] = rowRangeValues[c];
-            }
-
-            if (!isEmptyRow) {
-                // Add the object to the loaded collection by ID and by order:
-                const lunchIdStr = rowDataValues[SpecialColumnNames.LunchId];
-                if (!lunchIdStr) {
-                    throw new Error(`${SpecialColumnNames.LunchId} not specified for item on row ${r}.`);
-                }
-                const lunchId = Number(lunchIdStr);
-                if (!Number.isInteger(lunchId)) {
-                    throw new Error(
-                        `Invalid ${SpecialColumnNames.LunchId}-value ('${lunchIdStr}') for item on row ${r}.`
-                    );
-                }
-
-                const rowInfo = { values: rowDataValues, range: rowRange };
-                existingTrans.tryAdd(lunchId, rowInfo);
-            }
-        }
-
-        console.debug(
-            `Done reading ${existingTrans.length} existing data rows from table '${tranTable.name}'.` +
-                `\n    Time taken: ${performance.now() - msStartReadPreexistingData} msec.`
-        );
+        // Load data from the table:
+        const existingTrans = await readExistingTransactions(tranTable, tranTableColNames, context);
 
         transSheetProgressTracker.setPercentage(30);
 
@@ -536,7 +606,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         const receivedTrans = new IndexedMap<number, Transaction>();
 
-        // Parsed Plaid data for each transaction:
+        // Parse Plaid data for each transaction:
         let countPlaidMetadataObjectsParsed = 0;
         for (let t = 0; t < fetched.transactions.length; t++) {
             const fetchedTran = fetched.transactions[t];
@@ -624,7 +694,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         transSheetProgressTracker.setPercentage(60);
 
-        // Go over downloaded transactions and decide what to do with Each:
+        // Merge: Go over downloaded transactions and decide what to do with Each:
         // - Existing transitions:
         //   - In No-Update mode: Just Skip;
         //   - In Update mode:
@@ -634,158 +704,183 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         //   Create new data row for insertion;
         // Finally, insert all newly create rows into the table.
 
-        const colIndexLastSyncVersion = tranTableColNames.findIndex((cn) => cn === SpecialColumnNames.LastSyncVersion);
-
         const tranRowsToAdd: (string | boolean | number)[][] = [];
-        const countExistingTransDetected = {
-            sameAsReceived: 0,
-            differentFromReceived: 0,
-            notComparedWithReceived: 0,
-        };
 
-        for (const tran of receivedTrans) {
-            // If Transaction already in table (existing):
-            const exTran = existingTrans.getByKey(tran.id);
-            if (exTran !== undefined) {
-                // If replacing existing transitions is NOT required, just skip it:
-                if (!context.isReplaceExistingTransactions) {
-                    countExistingTransDetected.notComparedWithReceived++;
-                    continue;
-                }
+        const opMergeTrans = useOpTracker().startOperation("Merge received and existing transactions.");
+        try {
+            const colIndexLastSyncVersion = tranTableColNames.findIndex(
+                (cn) => cn === SpecialColumnNames.LastSyncVersion
+            );
+            const countExistingTransFound = {
+                sameAsReceived: 0,
+                differentFromReceived: 0,
+                notComparedWithReceived: 0,
+            };
 
-                // Replacing the existing transitions is IS required. So:
-                // Loop over the existing data and compare it with received data:
-                exTran.range.load(["formulas"]);
-                await context.excel.sync();
-                const tranDataVals = exTran.range.values[0]!;
-                const tranFormulas = exTran.range.formulas[0]!;
-                let needsUpdating = false;
-                for (let c = 0; c < tranDataVals.length; c++) {
-                    // Skip the sync version column, as it is always different:
-                    if (c === colIndexLastSyncVersion) {
+            for (const tran of receivedTrans) {
+                // If Transaction already in table (existing):
+                const exTran = existingTrans.getByKey(tran.id);
+                if (exTran !== undefined) {
+                    // If replacing existing transitions is NOT required, just skip it:
+                    if (!context.isReplaceExistingTransactions) {
+                        countExistingTransFound.notComparedWithReceived++;
                         continue;
                     }
 
-                    // Check whether received data is different, and if so - track for update:
-                    const colName = tranTableColNames[c]!;
-                    const existingColVal = tranDataVals[c];
-                    const receivedColVal = getTransactionColumnValue(tran, colName, tranColumnsSpecs);
-                    if (existingColVal !== receivedColVal) {
-                        if (
-                            typeof existingColVal === "number" &&
-                            typeof receivedColVal === "string" &&
-                            Number(receivedColVal.trim()) === existingColVal
-                        ) {
-                            // Excel eagerly converts strings to numbers.
-                            // If after that conversions, values match, we consider them Equal.
-                        } else if (tranFormulas[c] === receivedColVal) {
-                            // The existing value doesn't match, but the formula does.
-                            // No need to update, but we still copy the formula
-                            // in case we detect the need to update based on another column:
-                            tranDataVals[c] = tranFormulas[c];
-                        } else {
-                            // NO match for either column or formula. Track for UPDATE:
-                            tranDataVals[c] = receivedColVal;
-                            needsUpdating = true;
+                    // Replacing the existing transitions is IS required. So:
+                    // Loop over the existing data and compare it with received data:
+                    exTran.range.load(["formulas"]);
+                    await context.excel.sync();
+                    const tranDataVals = exTran.range.values[0]!;
+                    const tranFormulas = exTran.range.formulas[0]!;
+                    let needsUpdating = false;
+                    for (let c = 0; c < tranDataVals.length; c++) {
+                        // Skip the sync version column, as it is always different:
+                        if (c === colIndexLastSyncVersion) {
+                            continue;
+                        }
+
+                        // Check whether received data is different, and if so - track for update:
+                        const colName = tranTableColNames[c]!;
+                        const existingColVal = tranDataVals[c];
+                        const receivedColVal = getTransactionColumnValue(tran, colName, tranColumnsSpecs);
+                        if (existingColVal !== receivedColVal) {
+                            if (
+                                typeof existingColVal === "number" &&
+                                typeof receivedColVal === "string" &&
+                                Number(receivedColVal.trim()) === existingColVal
+                            ) {
+                                // Excel eagerly converts strings to numbers.
+                                // If after that conversions, values match, we consider them Equal.
+                            } else if (tranFormulas[c] === receivedColVal) {
+                                // The existing value doesn't match, but the formula does.
+                                // No need to update, but we still copy the formula
+                                // in case we detect the need to update based on another column:
+                                tranDataVals[c] = tranFormulas[c];
+                            } else {
+                                // NO match for either column or formula. Track for UPDATE:
+                                tranDataVals[c] = receivedColVal;
+                                needsUpdating = true;
+                            }
                         }
                     }
-                }
 
-                // If the received data is different, update the transaction row:
-                if (needsUpdating) {
-                    tranDataVals[colIndexLastSyncVersion] = context.currentSync.version;
-                    exTran.range.values = [tranDataVals];
-                    countExistingTransDetected.differentFromReceived++;
-                    await context.excel.sync();
-                } else {
-                    countExistingTransDetected.sameAsReceived++;
-                }
-            } else {
-                // The `exTran` is undefined, i.e. received `tran` is new.
-                // Initialize a new data row based on the received transaction:
-                const rowToAdd: (string | boolean | number)[] = [];
-
-                for (const colName of tranTableColNames) {
-                    if (colName === SpecialColumnNames.LastSyncVersion) {
-                        rowToAdd.push(context.currentSync.version);
+                    // If the received data is different, update the transaction row:
+                    if (needsUpdating) {
+                        tranDataVals[colIndexLastSyncVersion] = context.currentSync.version;
+                        exTran.range.values = [tranDataVals];
+                        countExistingTransFound.differentFromReceived++;
+                        await context.excel.sync();
                     } else {
-                        rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs));
+                        countExistingTransFound.sameAsReceived++;
                     }
+                } else {
+                    // The `exTran` is undefined, i.e. received `tran` is new.
+                    // Initialize a new data row based on the received transaction:
+                    const rowToAdd: (string | boolean | number)[] = [];
+
+                    for (const colName of tranTableColNames) {
+                        if (colName === SpecialColumnNames.LastSyncVersion) {
+                            rowToAdd.push(context.currentSync.version);
+                        } else {
+                            rowToAdd.push(getTransactionColumnValue(tran, colName, tranColumnsSpecs));
+                        }
+                    }
+
+                    // Add the transaction data row to the list of rows to add:
+                    tranRowsToAdd.push(rowToAdd);
                 }
-
-                // Add the transaction data row to the list of rows to add:
-                tranRowsToAdd.push(rowToAdd);
             }
-        }
 
-        console.log(
-            `${receivedTrans.length} received transactions were processed.`,
-            "context.isReplaceExistingTransactions: ",
-            context.isReplaceExistingTransactions,
-            "countExistingTransDetected: ",
-            countExistingTransDetected,
-            "tranRowsToAdd.length: ",
-            tranRowsToAdd.length
-        );
+            opMergeTrans.setSuccess({
+                countReceivedTrans: receivedTrans.length,
+                isReplaceExistingTrans: context.isReplaceExistingTransactions,
+                countExistingTransFound,
+                countTranRowsToAdd: tranRowsToAdd.length,
+            });
+        } catch (err) {
+            opMergeTrans.setFailureAndRethrow(err);
+        }
 
         transSheetProgressTracker.setPercentage(67);
 
         // Insert new transaction rows:
-        tranTable.rows.load(["items", "count"]);
-        if (tranRowsToAdd.length > 0) {
-            console.debug(`Inserting ${tranRowsToAdd.length} rows into the table...`);
-            const msStartAddTableRows = performance.now();
 
-            tranTable.rows.add(0, tranRowsToAdd);
-            await context.excel.sync();
-
-            console.log(`Rows inserted.\n    Time taken: ${performance.now() - msStartAddTableRows} msec.`);
+        const opInsertRows = useOpTracker().startOperation("Insert rows into Transactions table", {
+            rowCount: tranRowsToAdd.length,
+        });
+        try {
+            const addChunkSize = 100;
+            let addChungStart = 0;
+            while (addChungStart < tranRowsToAdd.length) {
+                const opInsertRowsChunk = useOpTracker().startOperation(
+                    `Insert rows ${addChungStart}..${addChungStart + addChunkSize} of ${tranRowsToAdd.length}`
+                );
+                try {
+                    const tranRowsToAddChunk = tranRowsToAdd.slice(addChungStart, addChungStart + addChunkSize);
+                    tranTable.rows.add(0, tranRowsToAddChunk);
+                    await context.excel.sync();
+                    addChungStart += addChunkSize;
+                    opInsertRowsChunk.setSuccess();
+                } catch (err) {
+                    opInsertRowsChunk.setFailureAndRethrow(err);
+                }
+            }
+            opInsertRows.setSuccess();
+        } catch (err) {
+            opInsertRows.setFailureAndRethrow(err);
         }
 
         transSheetProgressTracker.setPercentage(75);
 
         // Sort the table:
+        const opSortTranTable = useOpTracker().startOperation("Sort the Transactions table");
+        try {
+            const sortFields: Excel.SortField[] = [
+                {
+                    key: tranTableColNames.findIndex((cn) => cn === "date"),
+                    sortOn: Excel.SortOn.value,
+                    ascending: false,
+                },
+                {
+                    key: tranTableColNames.findIndex((cn) => cn === "plaid:authorized_datetime"),
+                    sortOn: Excel.SortOn.value,
+                    ascending: false,
+                },
+                {
+                    key: tranTableColNames.findIndex((cn) => cn === "Account"),
+                    sortOn: Excel.SortOn.value,
+                    ascending: true,
+                },
+                {
+                    key: tranTableColNames.findIndex((cn) => cn === "Payer"),
+                    sortOn: Excel.SortOn.value,
+                    ascending: true,
+                },
+                {
+                    key: tranTableColNames.findIndex((cn) => cn === "payee"),
+                    sortOn: Excel.SortOn.value,
+                    ascending: true,
+                },
+                {
+                    key: tranTableColNames.findIndex((cn) => cn === "plaid:datetime"),
+                    sortOn: Excel.SortOn.value,
+                    ascending: false,
+                },
+                {
+                    key: tranTableColNames.findIndex((cn) => cn === "SpecialColumnNames.LunchId"),
+                    sortOn: Excel.SortOn.value,
+                    ascending: true,
+                },
+            ].filter((f) => f.key >= 0);
 
-        const sortFields: Excel.SortField[] = [
-            {
-                key: tranTableColNames.findIndex((cn) => cn === "date"),
-                sortOn: Excel.SortOn.value,
-                ascending: false,
-            },
-            {
-                key: tranTableColNames.findIndex((cn) => cn === "plaid:authorized_datetime"),
-                sortOn: Excel.SortOn.value,
-                ascending: false,
-            },
-            {
-                key: tranTableColNames.findIndex((cn) => cn === "Account"),
-                sortOn: Excel.SortOn.value,
-                ascending: true,
-            },
-            {
-                key: tranTableColNames.findIndex((cn) => cn === "Payer"),
-                sortOn: Excel.SortOn.value,
-                ascending: true,
-            },
-            {
-                key: tranTableColNames.findIndex((cn) => cn === "payee"),
-                sortOn: Excel.SortOn.value,
-                ascending: true,
-            },
-            {
-                key: tranTableColNames.findIndex((cn) => cn === "plaid:datetime"),
-                sortOn: Excel.SortOn.value,
-                ascending: false,
-            },
-            {
-                key: tranTableColNames.findIndex((cn) => cn === "SpecialColumnNames.LunchId"),
-                sortOn: Excel.SortOn.value,
-                ascending: true,
-            },
-        ].filter((f) => f.key >= 0);
+            tranTable.sort.apply(sortFields);
+            await context.excel.sync();
 
-        tranTable.sort.apply(sortFields);
-        await context.excel.sync();
+            opSortTranTable.setSuccess();
+        } catch (err) {
+            opSortTranTable.setFailureAndRethrow(err);
+        }
 
         transSheetProgressTracker.setPercentage(80);
 
