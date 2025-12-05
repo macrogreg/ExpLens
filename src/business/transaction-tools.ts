@@ -372,13 +372,6 @@ export function tryGetTagGroupFromColumnName(columnName: string): string | undef
     return columnName.substring(TagGroupColumnNamePrefix.length);
 }
 
-export type TransactionRowValue = string | number | boolean | null;
-
-export type TransactionRowData = {
-    values: Record<string, TransactionRowValue>;
-    range: Excel.Range;
-};
-
 export function getTransactionColumnValue(
     tran: Transaction,
     colName: string,

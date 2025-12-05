@@ -5,7 +5,7 @@
         </q-page-container>
 
         <q-footer style="background-color: #f6f6f8">
-            <StatusLogView :sizeJumpSteps="[90, 200, Math.min(($q.screen.height ?? 600) - 250, 650)]" />
+            <StatusLogView :sizeJumpSteps="[130, Math.min(($q.screen.height ?? 600) - 250, 650), 70]" />
         </q-footer>
     </q-layout>
 </template>

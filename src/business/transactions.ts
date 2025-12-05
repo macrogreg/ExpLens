@@ -2,7 +2,7 @@
 
 import { errorTypeMessageString, formatDateUtc } from "src/util/format_util";
 import { datetimeToExcel, findTableByNameOnSheet, getRangeBasedOn } from "./excel-util";
-import type { Transaction, TransactionColumnSpec, TransactionRowData, TransactionRowValue } from "./transaction-tools";
+import type { Transaction, TransactionColumnSpec } from "./transaction-tools";
 import {
     getTransactionColumnValue,
     SpecialColumnNames,
@@ -367,7 +367,7 @@ async function readExistingTransactions(
     tranTable: Excel.Table,
     tranTableColNames: string[],
     context: SyncContext
-): Promise<IndexedMap<number, TransactionRowData>> {
+): Promise<IndexedMap<number, Excel.Range>> {
     const opReadExistingTrans = useOpTracker().startOperation(
         `Read ${tranTable.rows.count} existing data rows from '${tranTable.name}'`
     );
@@ -375,7 +375,15 @@ async function readExistingTransactions(
     let opReadStep: null | TrackedOperation = null;
 
     try {
-        const existingTrans = new IndexedMap<number, TransactionRowData>();
+        const existingTrans = new IndexedMap<number, Excel.Range>();
+
+        const idColInd = tranTableColNames.findIndex((cn) => cn === SpecialColumnNames.LunchId);
+
+        const idCol = tranTable.columns.getItemAt(idColInd);
+        const idColRange = idCol.getDataBodyRange();
+
+        idColRange.load(["values"]);
+        await context.excel.sync();
 
         for (let r = 0; r < tranTable.rows.count; r++) {
             const progressUpdateStep = 100;
@@ -387,42 +395,68 @@ async function readExistingTransactions(
                 );
             }
 
-            // Load the values of this row:
+            // Range for this row:
             const rowRange = tranTable.rows.getItemAt(r).getRange();
-            rowRange.load(["values", "address"]);
-            await context.excel.sync();
-            const rowRangeValues = rowRange.values[0]!;
 
-            // Build the data object:
-            let isEmptyRow = true;
-            const rowDataValues: Record<string, TransactionRowValue> = {};
-            for (let c = 0; c < rowRangeValues.length; c++) {
-                const colName = tranTableColNames[c]!;
-                if (rowRangeValues[c] === undefined) {
-                    throw new Error(`Column #${c} ('${colName}') not specified for item on row ${r}.`);
-                }
-                if (rowRangeValues[c] !== "") {
-                    isEmptyRow = false;
-                }
-                rowDataValues[colName] = rowRangeValues[c];
+            // Look up the id for this row from the ID-column we loaded earlier:
+            const idRowVal = idColRange.values[r];
+
+            if (idRowVal === undefined) {
+                throw new Error(
+                    `readExistingTransactions: idColRange.values[${r}] should be a one element` +
+                        ` array containing the id, but it is undefined.`
+                );
+            }
+            const lunchIdStr = idRowVal[0];
+            if (lunchIdStr === undefined) {
+                throw new Error(
+                    `readExistingTransactions: lunchId (=idColRange.values[${r}][0]) should be a` +
+                        ` number (the ID), but it is undefined.`
+                );
+            }
+            const lunchId = Number(lunchIdStr);
+            if (!Number.isInteger(lunchId)) {
+                throw new Error(`Invalid ${SpecialColumnNames.LunchId}-value ('${lunchIdStr}') for item on row ${r}.`);
             }
 
-            if (!isEmptyRow) {
-                // Add the object to the loaded collection by ID and by order:
-                const lunchIdStr = rowDataValues[SpecialColumnNames.LunchId];
-                if (!lunchIdStr) {
-                    throw new Error(`${SpecialColumnNames.LunchId} not specified for item on row ${r}.`);
-                }
-                const lunchId = Number(lunchIdStr);
-                if (!Number.isInteger(lunchId)) {
-                    throw new Error(
-                        `Invalid ${SpecialColumnNames.LunchId}-value ('${lunchIdStr}') for item on row ${r}.`
-                    );
-                }
+            existingTrans.tryAdd(lunchId, rowRange);
 
-                const rowInfo = { values: rowDataValues, range: rowRange };
-                existingTrans.tryAdd(lunchId, rowInfo);
-            }
+            // // Alternative approach that loads all data, not just the IDs. This is slower:
+            // const rowRange = tranTable.rows.getItemAt(r).getRange();
+            // rowRange.load(["values", "address"]);
+            // await context.excel.sync();
+            // const rowRangeValues = rowRange.values[0]!;
+
+            // // Build the data object:
+            // let isEmptyRow = true;
+            // const rowDataValues: Record<string, TransactionRowValue> = {};
+            // for (let c = 0; c < rowRangeValues.length; c++) {
+            //     const colName = tranTableColNames[c]!;
+            //     if (rowRangeValues[c] === undefined) {
+            //         throw new Error(`Column #${c} ('${colName}') not specified for item on row ${r}.`);
+            //     }
+            //     if (rowRangeValues[c] !== "") {
+            //         isEmptyRow = false;
+            //     }
+            //     rowDataValues[colName] = rowRangeValues[c];
+            // }
+
+            // if (!isEmptyRow) {
+            //     // Add the object to the loaded collection by ID and by order:
+            //     const lunchIdStr = rowDataValues[SpecialColumnNames.LunchId];
+            //     if (!lunchIdStr) {
+            //         throw new Error(`${SpecialColumnNames.LunchId} not specified for item on row ${r}.`);
+            //     }
+            //     const lunchId = Number(lunchIdStr);
+            //     if (!Number.isInteger(lunchId)) {
+            //         throw new Error(
+            //             `Invalid ${SpecialColumnNames.LunchId}-value ('${lunchIdStr}') for item on row ${r}.`
+            //         );
+            //     }
+
+            //     const rowInfo = { values: rowDataValues, range: rowRange };
+            //     existingTrans.tryAdd(lunchId, rowInfo);
+            // }
         }
 
         opReadStep?.setSuccess();
@@ -706,7 +740,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         const tranRowsToAdd: (string | boolean | number)[][] = [];
 
-        const opMergeTrans = useOpTracker().startOperation("Merge received and existing transactions.");
+        const opMergeTrans = useOpTracker().startOperation("Merge received and existing transactions");
         try {
             const colIndexLastSyncVersion = tranTableColNames.findIndex(
                 (cn) => cn === SpecialColumnNames.LastSyncVersion
@@ -719,8 +753,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
             for (const tran of receivedTrans) {
                 // If Transaction already in table (existing):
-                const exTran = existingTrans.getByKey(tran.id);
-                if (exTran !== undefined) {
+                const exTranRange = existingTrans.getByKey(tran.id);
+                if (exTranRange !== undefined) {
                     // If replacing existing transitions is NOT required, just skip it:
                     if (!context.isReplaceExistingTransactions) {
                         countExistingTransFound.notComparedWithReceived++;
@@ -729,10 +763,10 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
                     // Replacing the existing transitions is IS required. So:
                     // Loop over the existing data and compare it with received data:
-                    exTran.range.load(["formulas"]);
+                    exTranRange.load(["values", "formulas"]);
                     await context.excel.sync();
-                    const tranDataVals = exTran.range.values[0]!;
-                    const tranFormulas = exTran.range.formulas[0]!;
+                    const tranDataVals = exTranRange.values[0]!;
+                    const tranFormulas = exTranRange.formulas[0]!;
                     let needsUpdating = false;
                     for (let c = 0; c < tranDataVals.length; c++) {
                         // Skip the sync version column, as it is always different:
@@ -768,7 +802,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                     // If the received data is different, update the transaction row:
                     if (needsUpdating) {
                         tranDataVals[colIndexLastSyncVersion] = context.currentSync.version;
-                        exTran.range.values = [tranDataVals];
+                        exTranRange.values = [tranDataVals];
                         countExistingTransFound.differentFromReceived++;
                         await context.excel.sync();
                     } else {
@@ -868,7 +902,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                     ascending: false,
                 },
                 {
-                    key: tranTableColNames.findIndex((cn) => cn === "SpecialColumnNames.LunchId"),
+                    key: tranTableColNames.findIndex((cn) => cn === SpecialColumnNames.LunchId),
                     sortOn: Excel.SortOn.value,
                     ascending: true,
                 },
