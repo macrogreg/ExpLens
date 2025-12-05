@@ -331,6 +331,123 @@ async function readExistingTransactions(
     }
 }
 
+async function fetchAndParseTransactions(startDate: Date, endDate: Date): Promise<IndexedMap<number, Transaction>> {
+    // Fetch transactions:
+
+    console.log("Will fetch transactions from Lunch Money...");
+    const msStartFetchTransactions = performance.now();
+
+    const startUtcDateStr = formatDateUtc(startDate);
+    const endUtcDateStr = formatDateUtc(endDate);
+    const fetchedResponseText = await authorizedFetch(
+        "GET",
+        `transactions?start_date=${startUtcDateStr}&end_date=${endUtcDateStr}`,
+        `get all transactions between ${startUtcDateStr} and ${endUtcDateStr} UTC`
+    );
+
+    console.log(`Transactions fetched.\n    Time taken: ${performance.now() - msStartFetchTransactions} msec.`);
+
+    //transSheetProgressTracker.setPercentage(45);
+
+    // Parse fetched Transactions:
+    const fetched: { transactions: Lunch.Transaction[]; has_more: boolean } = JSON.parse(fetchedResponseText);
+    console.log("Transactions parsed. Length:", fetched.transactions.length, "Has_more:", fetched.has_more);
+    //console.debug("Fetched transactions:", fetched.transactions);
+
+    if (fetched.has_more) {
+        console.error("There are more transactions to fetch, but this is not yet supported!");
+    }
+
+    //transSheetProgressTracker.setPercentage(50);
+
+    const receivedTrans = new IndexedMap<number, Transaction>();
+
+    // Parse Plaid data for each transaction:
+    let countPlaidMetadataObjectsParsed = 0;
+    for (let t = 0; t < fetched.transactions.length; t++) {
+        const fetchedTran = fetched.transactions[t];
+        if (!fetchedTran) {
+            continue;
+        }
+
+        const fetchedTranId = fetchedTran.id;
+        if (!Number.isInteger(fetchedTranId)) {
+            throw new Error(
+                `Cannot parse ID of fetched transaction #${t}. Integer ID expected. (Actual id='${fetchedTranId}'.)`
+            );
+        }
+
+        const tran: Transaction = {
+            trn: fetchedTran,
+            pld: null,
+            tag: new Map<string, Set<string>>(),
+            id: fetchedTranId,
+        };
+
+        receivedTrans.tryAdd(tran.id, tran);
+
+        const plaidDataStr = fetchedTran.plaid_metadata;
+        if (typeof plaidDataStr === "string") {
+            try {
+                const plaidMetadata: Lunch.PlaidMetadata = JSON.parse(plaidDataStr);
+                tran.pld = plaidMetadata;
+                countPlaidMetadataObjectsParsed++;
+            } catch (err) {
+                console.error(
+                    `Cannot parse plaid_metadata for fetched transaction #${t}.`,
+                    "plaidDataStr:",
+                    plaidDataStr
+                );
+                throw new Error(`Cannot parse plaid_metadata for fetched transaction #${t} (id=${fetchedTran?.id}).`, {
+                    cause: err,
+                });
+            }
+        }
+    }
+    console.log(
+        `Plaid Metadata objects parsed: ${countPlaidMetadataObjectsParsed} / ${fetched.transactions.length}.` +
+            "\n(Not all transactions will have Plaid Metadata. E.g., groups, split transactions, transactions" +
+            " imported form sources other than Plaid.)"
+    );
+
+    //transSheetProgressTracker.setPercentage(55);
+
+    // Parse Tags for all received transactions:
+
+    const allReceivedTags: TagValuesCollection = new Map<string, Set<string>>();
+
+    for (let t = 0; t < receivedTrans.length; t++) {
+        const tran = receivedTrans.getByIndex(t);
+        if (!tran || !tran.trn.tags) {
+            continue;
+        }
+
+        // For each tag of this transaction, and add it to the tag values collections:
+        const tags: { name: string; id: number }[] = tran.trn.tags;
+        for (const tag of tags) {
+            // Parse the tag:
+            const tagInfo = parseTag(tag.name);
+            //console.debug(`Transaction '${tran.trn.id}'. tagInfo:`, tagInfo);
+
+            // Add the tag to the list of this transaction:
+            if (!tran.tag.has(tagInfo.group)) {
+                tran.tag.set(tagInfo.group, new Set<string>());
+            }
+            tran.tag.get(tagInfo.group)!.add(tagInfo.value);
+
+            // Add the tag to the list of all received tags:
+            if (!allReceivedTags.has(tagInfo.group)) {
+                allReceivedTags.set(tagInfo.group, new Set<string>());
+            }
+            allReceivedTags.get(tagInfo.group)!.add(tagInfo.value);
+        }
+    }
+
+    console.log(`Received transactions contains tags from ${allReceivedTags.size} different groups.`);
+
+    return receivedTrans;
+}
+
 async function applyColumnFormatting(
     tranTable: Excel.Table,
     tranTableColNames: string[],
@@ -579,121 +696,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         transSheetProgressTracker.setPercentage(30);
 
-        // Fetch transactions:
-
-        console.log("Will fetch transactions from Lunch Money...");
-        const msStartFetchTransactions = performance.now();
-
-        const startUtcDateStr = formatDateUtc(startDate);
-        const endUtcDateStr = formatDateUtc(endDate);
-        const fetchedResponseText = await authorizedFetch(
-            "GET",
-            `transactions?start_date=${startUtcDateStr}&end_date=${endUtcDateStr}`,
-            `get all transactions between ${startUtcDateStr} and ${endUtcDateStr} UTC`
-        );
-
-        console.log(`Transactions fetched.\n    Time taken: ${performance.now() - msStartFetchTransactions} msec.`);
-
-        transSheetProgressTracker.setPercentage(45);
-
-        // Parse fetched Transactions:
-        const fetched: { transactions: Lunch.Transaction[]; has_more: boolean } = JSON.parse(fetchedResponseText);
-        console.log("Transactions parsed. Length:", fetched.transactions.length, "Has_more:", fetched.has_more);
-        //console.debug("Fetched transactions:", fetched.transactions);
-
-        if (fetched.has_more) {
-            console.error("There are more transactions to fetch, but this is not yet supported!");
-        }
-
-        transSheetProgressTracker.setPercentage(50);
-
-        const receivedTrans = new IndexedMap<number, Transaction>();
-
-        // Parse Plaid data for each transaction:
-        let countPlaidMetadataObjectsParsed = 0;
-        for (let t = 0; t < fetched.transactions.length; t++) {
-            const fetchedTran = fetched.transactions[t];
-            if (!fetchedTran) {
-                continue;
-            }
-
-            const fetchedTranId = fetchedTran.id;
-            if (!Number.isInteger(fetchedTranId)) {
-                throw new Error(
-                    `Cannot parse ID of fetched transaction #${t}. Integer ID expected. (Actual id='${fetchedTranId}'.)`
-                );
-            }
-
-            const tran: Transaction = {
-                trn: fetchedTran,
-                pld: null,
-                tag: new Map<string, Set<string>>(),
-                id: fetchedTranId,
-            };
-
-            receivedTrans.tryAdd(tran.id, tran);
-
-            const plaidDataStr = fetchedTran.plaid_metadata;
-            if (typeof plaidDataStr === "string") {
-                try {
-                    const plaidMetadata: Lunch.PlaidMetadata = JSON.parse(plaidDataStr);
-                    tran.pld = plaidMetadata;
-                    countPlaidMetadataObjectsParsed++;
-                } catch (err) {
-                    console.error(
-                        `Cannot parse plaid_metadata for fetched transaction #${t}.`,
-                        "plaidDataStr:",
-                        plaidDataStr
-                    );
-                    throw new Error(
-                        `Cannot parse plaid_metadata for fetched transaction #${t} (id=${fetchedTran?.id}).`,
-                        {
-                            cause: err,
-                        }
-                    );
-                }
-            }
-        }
-        console.log(
-            `Plaid Metadata objects parsed: ${countPlaidMetadataObjectsParsed} / ${fetched.transactions.length}.` +
-                "\n(Not all transactions will have Plaid Metadata. E.g., groups, split transactions, transactions" +
-                " imported form sources other than Plaid.)"
-        );
-
-        transSheetProgressTracker.setPercentage(55);
-
-        // Parse Tags for all received transactions:
-
-        const allReceivedTags: TagValuesCollection = new Map<string, Set<string>>();
-
-        for (let t = 0; t < receivedTrans.length; t++) {
-            const tran = receivedTrans.getByIndex(t);
-            if (!tran || !tran.trn.tags) {
-                continue;
-            }
-
-            // For each tag of this transaction, and add it to the tag values collections:
-            const tags: { name: string; id: number }[] = tran.trn.tags;
-            for (const tag of tags) {
-                // Parse the tag:
-                const tagInfo = parseTag(tag.name);
-                //console.debug(`Transaction '${tran.trn.id}'. tagInfo:`, tagInfo);
-
-                // Add the tag to the list of this transaction:
-                if (!tran.tag.has(tagInfo.group)) {
-                    tran.tag.set(tagInfo.group, new Set<string>());
-                }
-                tran.tag.get(tagInfo.group)!.add(tagInfo.value);
-
-                // Add the tag to the list of all received tags:
-                if (!allReceivedTags.has(tagInfo.group)) {
-                    allReceivedTags.set(tagInfo.group, new Set<string>());
-                }
-                allReceivedTags.get(tagInfo.group)!.add(tagInfo.value);
-            }
-        }
-
-        console.log(`Received transactions contains tags from ${allReceivedTags.size} different groups.`);
+        // Fetch transactions from the remote endpoint and parse the data:
+        const receivedTrans: IndexedMap<number, Transaction> = await fetchAndParseTransactions(startDate, endDate);
 
         transSheetProgressTracker.setPercentage(60);
 
