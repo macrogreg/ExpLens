@@ -164,13 +164,15 @@ async function createNewTranTable(
 
 async function applyColumnFormatting(
     tranTable: Excel.Table,
+    tranTableColNames: string[],
     tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
     context: SyncContext
 ) {
     const opApplyColsFormat = useOpTracker().startOperation("Apply formatting to table columns");
     try {
-        for (const tabCol of tranTable.columns.items) {
-            const colName = tabCol.name;
+        for (let c = 0; c < tranTableColNames.length; c++) {
+            const colName = tranTableColNames[c]!;
+            const tabCol = tranTable.columns.getItemAt(c);
             const colSpec = tranColumnsSpecs.getByKey(colName);
             if (colSpec === undefined) {
                 continue;
@@ -268,49 +270,44 @@ async function printSheetHeaders(context: SyncContext) {
     await context.excel.sync();
 }
 
-async function createEditableHintHeader(tranTable: Excel.Table, context: SyncContext) {
+async function createEditableHintHeader(tranTable: Excel.Table, tranTableColNames: string[], context: SyncContext) {
     const opCreateHintHeader = useOpTracker().startOperation(
         "Create Read-Only vs Editable hint header row for Transactions"
     );
-    let opHintStep: null | TrackedOperation = null;
 
     try {
-        tranTable.columns.load(["count"]);
+        // Make sure we know where the table is:
         const tranTableRange = tranTable.getRange();
         tranTableRange.load(["address", "rowIndex", "columnIndex"]);
         await context.excel.sync();
 
-        const hintRowOffs = { row: tranTableRange.rowIndex - 1, col: tranTableRange.columnIndex };
-
-        // Create Read-Only vs Editable marker row:
+        // Build the list of editable columns:
         const editableColumnNames = new Set<string>(["Category"]);
         for (const gn of context.tags.assignable.keys()) {
             editableColumnNames.add(formatTagGroupColumnHeader(gn));
         }
 
+        // The RO columns are the vast majority.
+        // First, apply Read-Only to the entire hint header row:
+        const hintRowOffs = { row: tranTableRange.rowIndex - 1, col: tranTableRange.columnIndex };
+        const hintHeaderRange = getRangeBasedOn(context.sheets.trans, hintRowOffs, 0, 0, 1, tranTableColNames.length);
+
+        setEditableHintRangeFormat(hintHeaderRange, "Read-Only");
+        await context.excel.sync();
+
+        // Now, override the hints for the Editable columns only:
+
         for (let c = 0; c < tranTable.columns.count; c++) {
-            const progressUpdateStep = 20;
-            if (c % progressUpdateStep === 0) {
-                opHintStep?.setSuccess();
-                opHintStep = useOpTracker().startOperation(
-                    `Set Read-Only/Editable hint for columns ${c}...${c + progressUpdateStep},` +
-                        ` out of ${tranTable.columns.count}`
-                );
+            const colName = tranTableColNames[c];
+            if (colName && editableColumnNames.has(colName)) {
+                const colHintCell = getRangeBasedOn(context.sheets.trans, hintRowOffs, 0, c, 1, 1);
+                setEditableHintRangeFormat(colHintCell, "Editable");
             }
-
-            const tabCol = tranTable.columns.getItemAt(c);
-            tabCol.load(["name"]);
-            await context.excel.sync();
-
-            const colKind = editableColumnNames.has(tabCol.name) ? "Editable" : "Read-Only";
-            const colHintCell = getRangeBasedOn(context.sheets.trans, hintRowOffs, 0, c, 1, 1);
-            setEditableHintRangeFormat(colHintCell, colKind);
         }
+        await context.excel.sync();
 
-        opHintStep?.setSuccess();
         opCreateHintHeader.setSuccess();
     } catch (err) {
-        opHintStep?.setFailure(err);
         opCreateHintHeader.setFailureAndRethrow(err);
     }
 }
@@ -420,43 +417,6 @@ async function readExistingTransactions(
             }
 
             existingTrans.tryAdd(lunchId, rowRange);
-
-            // // Alternative approach that loads all data, not just the IDs. This is slower:
-            // const rowRange = tranTable.rows.getItemAt(r).getRange();
-            // rowRange.load(["values", "address"]);
-            // await context.excel.sync();
-            // const rowRangeValues = rowRange.values[0]!;
-
-            // // Build the data object:
-            // let isEmptyRow = true;
-            // const rowDataValues: Record<string, TransactionRowValue> = {};
-            // for (let c = 0; c < rowRangeValues.length; c++) {
-            //     const colName = tranTableColNames[c]!;
-            //     if (rowRangeValues[c] === undefined) {
-            //         throw new Error(`Column #${c} ('${colName}') not specified for item on row ${r}.`);
-            //     }
-            //     if (rowRangeValues[c] !== "") {
-            //         isEmptyRow = false;
-            //     }
-            //     rowDataValues[colName] = rowRangeValues[c];
-            // }
-
-            // if (!isEmptyRow) {
-            //     // Add the object to the loaded collection by ID and by order:
-            //     const lunchIdStr = rowDataValues[SpecialColumnNames.LunchId];
-            //     if (!lunchIdStr) {
-            //         throw new Error(`${SpecialColumnNames.LunchId} not specified for item on row ${r}.`);
-            //     }
-            //     const lunchId = Number(lunchIdStr);
-            //     if (!Number.isInteger(lunchId)) {
-            //         throw new Error(
-            //             `Invalid ${SpecialColumnNames.LunchId}-value ('${lunchIdStr}') for item on row ${r}.`
-            //         );
-            //     }
-
-            //     const rowInfo = { values: rowDataValues, range: rowRange };
-            //     existingTrans.tryAdd(lunchId, rowInfo);
-            // }
         }
 
         opReadStep?.setSuccess();
@@ -517,9 +477,6 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         // If the sync context specified columns that were not already present in the table, insert them:
         await insertMissingTagColumns(tranTable, context);
 
-        // Create the RO/RW hints header above the table:
-        await createEditableHintHeader(tranTable, context);
-
         // Freeze table head:
         {
             context.sheets.trans.freezePanes.unfreeze();
@@ -550,6 +507,9 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
 
         // Cache the actually present Transactions table Column Names:
         const tranTableColNames: string[] = tranTable.columns.items.map((col) => col.name.trim());
+
+        // Create the RO/RW hints header above the table:
+        await createEditableHintHeader(tranTable, tranTableColNames, context);
 
         // Ensure the ID column exists:
         if (!tranTableColNames.includes(SpecialColumnNames.LunchId)) {
@@ -919,7 +879,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         transSheetProgressTracker.setPercentage(80);
 
         // Apply formatting to all columns and rows:
-        await applyColumnFormatting(tranTable, tranColumnsSpecs, context);
+        await applyColumnFormatting(tranTable, tranTableColNames, tranColumnsSpecs, context);
 
         transSheetProgressTracker.setPercentage(90);
 
