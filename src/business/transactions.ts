@@ -25,101 +25,6 @@ import { type TrackedOperation } from "src/status-tracker/models/TrackedOperatio
 export const SheetNameTransactions = "EL.Transactions";
 const TableNameTransactions = "EL.TransactionsTable";
 
-function isColumnNamingEquivalent(
-    columnsSpecs: IndexedMap<string, TransactionColumnSpec>,
-    actualColumnNames: string[]
-) {
-    const opCheckColNaming = useOpTracker().startOperation("Validate Transactions table Column names");
-
-    try {
-        let expC = 0,
-            actC = 0;
-        while (true) {
-            // Skip tag columns during structural comparison:
-            while (expC < columnsSpecs.length && tryGetTagGroupFromColumnName(columnsSpecs.getByIndex(expC)!.name)) {
-                expC++;
-            }
-            while (actC < actualColumnNames.length && tryGetTagGroupFromColumnName(actualColumnNames[actC]!)) {
-                actC++;
-            }
-
-            // If both comparison column lists are exhausted, they match:
-            if (expC === columnsSpecs.length && actC === actualColumnNames.length) {
-                opCheckColNaming.setSuccess();
-                return true;
-            }
-
-            // If only of of the comparison column lists is exhausted, they do not match:
-            if (expC === columnsSpecs.length || actC === actualColumnNames.length) {
-                opCheckColNaming.setFailure(
-                    `isColumnNamingEquivalent(..):\n` +
-                        `The lengths of 'columnsSpecs' (${columnsSpecs.length}) and` +
-                        ` actualColumnNames (${actualColumnNames.length}) are different after accounting` +
-                        ` for dynamic tag columns.`
-                );
-                return false;
-            }
-
-            // If col names at current cursors are different, lists do not match:
-            if (columnsSpecs.getByIndex(expC)?.name !== actualColumnNames[actC]) {
-                opCheckColNaming.setFailure(
-                    `isColumnNamingEquivalent(..):\n` +
-                        `After accounting for dynamic tag columns, aligned headers are not the same:\n` +
-                        `columnsSpecs.getByIndex(${expC})?.name !== actualColumnNames[${actC}]` +
-                        ` ('${columnsSpecs.getByIndex(expC)?.name}' !=== '${actualColumnNames[actC]}').`
-                );
-                return false;
-            }
-
-            // Names at current positions match, move cursors forward:
-            expC++;
-            actC++;
-        }
-    } catch (err) {
-        return opCheckColNaming.setFailureAndRethrow(err);
-    }
-}
-
-// If the sync context specified columns that were not already present in the table, insert them:
-async function insertMissingTagColumns(tranTable: Excel.Table, context: SyncContext) {
-    tranTable.columns.load(["count", "items"]);
-    tranTable.rows.load(["count"]);
-    await context.excel.sync();
-
-    // Set of all required tag columns:
-    const reqTagColNames = context.tags.assignable.keys().map((gn) => formatTagGroupColumnHeader(gn));
-    const missingColNames = new Set(reqTagColNames);
-
-    // Scroll through table, remove all encountered tag columns from search set:
-    let firstTagColNum: number | undefined = undefined;
-    for (let c = 0; c < tranTable.columns.count; c++) {
-        const col = tranTable.columns.getItemAt(c).load(["name"]);
-        await context.excel.sync();
-
-        // If no more outstanding column names, be done:
-        missingColNames.delete(col.name);
-        if (missingColNames.size === 0) {
-            return;
-        }
-
-        if (tryGetTagGroupFromColumnName(col.name)) {
-            firstTagColNum = firstTagColNum === undefined ? c : firstTagColNum;
-        }
-    }
-
-    if (firstTagColNum === undefined) {
-        firstTagColNum = getTagColumnsPosition();
-    }
-
-    //Add required columns:
-    const colNamesToAdd = [...missingColNames].sort().reverse();
-    for (const cn of colNamesToAdd) {
-        tranTable.columns.add(firstTagColNum, undefined, cn);
-    }
-
-    await context.excel.sync();
-}
-
 async function createNewTranTable(
     tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
     sheet: Excel.Worksheet,
@@ -162,64 +67,44 @@ async function createNewTranTable(
     }
 }
 
-async function applyColumnFormatting(
-    tranTable: Excel.Table,
-    tranTableColNames: string[],
-    tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
-    context: SyncContext
-) {
-    const opApplyColsFormat = useOpTracker().startOperation("Apply formatting to table columns");
-    let opColsFormatBatch: null | TrackedOperation = null;
-    try {
-        for (let c = 0; c < tranTableColNames.length; c++) {
-            const progressApplyFormatBatchSize = 30;
-            if (c % progressApplyFormatBatchSize === 0) {
-                opColsFormatBatch?.setSuccess();
-                opColsFormatBatch = useOpTracker().startOperation(
-                    `Format table columns ${c}...${c + progressApplyFormatBatchSize},` +
-                        ` out of ${tranTableColNames.length}`
-                );
-            }
+// If the sync context specified columns that were not already present in the table, insert them:
+async function insertMissingTagColumns(tranTable: Excel.Table, context: SyncContext) {
+    tranTable.columns.load(["count", "items"]);
+    tranTable.rows.load(["count"]);
+    await context.excel.sync();
 
-            const colName = tranTableColNames[c]!;
-            const tabCol = tranTable.columns.getItemAt(c);
-            const colSpec = tranColumnsSpecs.getByKey(colName);
-            if (colSpec === undefined) {
-                continue;
-            }
+    // Set of all required tag columns:
+    const reqTagColNames = context.tags.assignable.keys().map((gn) => formatTagGroupColumnHeader(gn));
+    const missingColNames = new Set(reqTagColNames);
 
-            const tabColRange = tabCol.getDataBodyRange();
-
-            const numFormat = colSpec.numberFormat;
-            if (numFormat) {
-                tabColRange.numberFormat = [[numFormat]];
-            }
-
-            const formatFn = colSpec.formatFn;
-            if (formatFn) {
-                try {
-                    const formatFnRes = formatFn(tabColRange.format, tabColRange.dataValidation, context);
-                    await formatFnRes;
-                    await context.excel.sync();
-                } catch (err) {
-                    const errMsg =
-                        `The formatFn of the column spec for '${colName}' threw an error` +
-                        `\n(${errorTypeMessageString(err)})` +
-                        `\nWe will skip over this and continue, but this needs to be corrected.`;
-                    opColsFormatBatch?.addInfo(errMsg, err);
-                    opApplyColsFormat.addInfo(errMsg, err);
-                }
-            }
-        }
-
+    // Scroll through table, remove all encountered tag columns from search set:
+    let firstTagColNum: number | undefined = undefined;
+    for (let c = 0; c < tranTable.columns.count; c++) {
+        const col = tranTable.columns.getItemAt(c).load(["name"]);
         await context.excel.sync();
 
-        opColsFormatBatch?.setSuccess();
-        opApplyColsFormat.setSuccess();
-    } catch (err) {
-        opColsFormatBatch?.setFailure(err);
-        opApplyColsFormat.setFailureAndRethrow(err);
+        // If no more outstanding column names, be done:
+        missingColNames.delete(col.name);
+        if (missingColNames.size === 0) {
+            return;
+        }
+
+        if (tryGetTagGroupFromColumnName(col.name)) {
+            firstTagColNum = firstTagColNum === undefined ? c : firstTagColNum;
+        }
     }
+
+    if (firstTagColNum === undefined) {
+        firstTagColNum = getTagColumnsPosition();
+    }
+
+    //Add required columns:
+    const colNamesToAdd = [...missingColNames].sort().reverse();
+    for (const cn of colNamesToAdd) {
+        tranTable.columns.add(firstTagColNum, undefined, cn);
+    }
+
+    await context.excel.sync();
 }
 
 function setEditableHintRangeFormat(range: Excel.Range, editableState: "Read-Only" | "Editable") {
@@ -321,52 +206,59 @@ async function createEditableHintHeader(tranTable: Excel.Table, tranTableColName
     }
 }
 
-async function createInfoRow(tranTable: Excel.Table, context: SyncContext) {
-    const tranTableRange = tranTable.getRange();
-    tranTableRange.load(["address", "rowIndex", "columnIndex", "name"]);
-    await context.excel.sync();
+function isColumnNamingEquivalent(
+    columnsSpecs: IndexedMap<string, TransactionColumnSpec>,
+    actualColumnNames: string[]
+) {
+    const opCheckColNaming = useOpTracker().startOperation("Validate Transactions table Column names");
 
-    const infoRowOffs = { row: tranTableRange.rowIndex - 2, col: tranTableRange.columnIndex };
+    try {
+        let expC = 0,
+            actC = 0;
+        while (true) {
+            // Skip tag columns during structural comparison:
+            while (expC < columnsSpecs.length && tryGetTagGroupFromColumnName(columnsSpecs.getByIndex(expC)!.name)) {
+                expC++;
+            }
+            while (actC < actualColumnNames.length && tryGetTagGroupFromColumnName(actualColumnNames[actC]!)) {
+                actC++;
+            }
 
-    // Count:
-    const countTransLabelRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 0, 1, 1);
-    countTransLabelRange.format.fill.clear();
-    countTransLabelRange.format.font.color = "#7e350e";
-    countTransLabelRange.format.font.bold = true;
-    countTransLabelRange.format.horizontalAlignment = "Right";
-    countTransLabelRange.values = [["Count:"]];
+            // If both comparison column lists are exhausted, they match:
+            if (expC === columnsSpecs.length && actC === actualColumnNames.length) {
+                opCheckColNaming.setSuccess();
+                return true;
+            }
 
-    const countTransFormulaRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 1, 1, 1);
-    countTransFormulaRange.format.fill.color = "#f2f2f2";
-    countTransFormulaRange.format.font.color = "#7e350e";
-    countTransFormulaRange.format.font.bold = true;
-    countTransFormulaRange.format.horizontalAlignment = "Left";
-    countTransFormulaRange.formulas = [[`="  " & COUNTA(${tranTable.name}[${SpecialColumnNames.LunchId}])`]];
+            // If only of of the comparison column lists is exhausted, they do not match:
+            if (expC === columnsSpecs.length || actC === actualColumnNames.length) {
+                opCheckColNaming.setFailure(
+                    `isColumnNamingEquivalent(..):\n` +
+                        `The lengths of 'columnsSpecs' (${columnsSpecs.length}) and` +
+                        ` actualColumnNames (${actualColumnNames.length}) are different after accounting` +
+                        ` for dynamic tag columns.`
+                );
+                return false;
+            }
 
-    // Last successful sync:
-    const lastCompletedSyncLabelRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 3, 1, 1);
-    lastCompletedSyncLabelRange.format.fill.clear();
-    lastCompletedSyncLabelRange.format.font.color = "#7e350e";
-    lastCompletedSyncLabelRange.format.font.bold = true;
-    lastCompletedSyncLabelRange.format.horizontalAlignment = "Right";
-    lastCompletedSyncLabelRange.values = [["Last completed download data version / time:"]];
+            // If col names at current cursors are different, lists do not match:
+            if (columnsSpecs.getByIndex(expC)?.name !== actualColumnNames[actC]) {
+                opCheckColNaming.setFailure(
+                    `isColumnNamingEquivalent(..):\n` +
+                        `After accounting for dynamic tag columns, aligned headers are not the same:\n` +
+                        `columnsSpecs.getByIndex(${expC})?.name !== actualColumnNames[${actC}]` +
+                        ` ('${columnsSpecs.getByIndex(expC)?.name}' !=== '${actualColumnNames[actC]}').`
+                );
+                return false;
+            }
 
-    const lastCompletedSyncVersionRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 4, 1, 1);
-    lastCompletedSyncVersionRange.format.fill.color = "#f2f2f2";
-    lastCompletedSyncVersionRange.format.font.color = "#7e350e";
-    lastCompletedSyncVersionRange.format.font.bold = true;
-    lastCompletedSyncVersionRange.format.horizontalAlignment = "Left";
-    lastCompletedSyncVersionRange.formulas = [[`="  " & "${context.currentSync.version}"`]];
-
-    const lastCompletedSyncTimeRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 5, 1, 1);
-    lastCompletedSyncTimeRange.format.fill.color = "#f2f2f2";
-    lastCompletedSyncTimeRange.format.font.color = "#7e350e";
-    lastCompletedSyncTimeRange.format.font.bold = true;
-    lastCompletedSyncTimeRange.format.horizontalAlignment = "Left";
-    lastCompletedSyncTimeRange.values = [[datetimeToExcel(context.currentSync.utc, true)]];
-    lastCompletedSyncTimeRange.numberFormat = [["  yyyy-mm-dd  HH:mm:ss"]];
-
-    await context.excel.sync();
+            // Names at current positions match, move cursors forward:
+            expC++;
+            actC++;
+        }
+    } catch (err) {
+        return opCheckColNaming.setFailureAndRethrow(err);
+    }
 }
 
 async function readExistingTransactions(
@@ -437,6 +329,114 @@ async function readExistingTransactions(
         opReadStep?.setFailure(err);
         return opReadExistingTrans.setFailureAndRethrow(err);
     }
+}
+
+async function applyColumnFormatting(
+    tranTable: Excel.Table,
+    tranTableColNames: string[],
+    tranColumnsSpecs: IndexedMap<string, TransactionColumnSpec>,
+    context: SyncContext
+) {
+    const opApplyColsFormat = useOpTracker().startOperation("Apply formatting to table columns");
+    let opColsFormatBatch: null | TrackedOperation = null;
+    try {
+        for (let c = 0; c < tranTableColNames.length; c++) {
+            const progressApplyFormatBatchSize = 30;
+            if (c % progressApplyFormatBatchSize === 0) {
+                opColsFormatBatch?.setSuccess();
+                opColsFormatBatch = useOpTracker().startOperation(
+                    `Format table columns ${c}...${c + progressApplyFormatBatchSize},` +
+                        ` out of ${tranTableColNames.length}`
+                );
+            }
+
+            const colName = tranTableColNames[c]!;
+            const tabCol = tranTable.columns.getItemAt(c);
+            const colSpec = tranColumnsSpecs.getByKey(colName);
+            if (colSpec === undefined) {
+                continue;
+            }
+
+            const tabColRange = tabCol.getDataBodyRange();
+
+            const numFormat = colSpec.numberFormat;
+            if (numFormat) {
+                tabColRange.numberFormat = [[numFormat]];
+            }
+
+            const formatFn = colSpec.formatFn;
+            if (formatFn) {
+                try {
+                    const formatFnRes = formatFn(tabColRange.format, tabColRange.dataValidation, context);
+                    await formatFnRes;
+                    await context.excel.sync();
+                } catch (err) {
+                    const errMsg =
+                        `The formatFn of the column spec for '${colName}' threw an error` +
+                        `\n(${errorTypeMessageString(err)})` +
+                        `\nWe will skip over this and continue, but this needs to be corrected.`;
+                    opColsFormatBatch?.addInfo(errMsg, err);
+                    opApplyColsFormat.addInfo(errMsg, err);
+                }
+            }
+        }
+
+        await context.excel.sync();
+
+        opColsFormatBatch?.setSuccess();
+        opApplyColsFormat.setSuccess();
+    } catch (err) {
+        opColsFormatBatch?.setFailure(err);
+        opApplyColsFormat.setFailureAndRethrow(err);
+    }
+}
+
+async function createInfoRow(tranTable: Excel.Table, context: SyncContext) {
+    const tranTableRange = tranTable.getRange();
+    tranTableRange.load(["address", "rowIndex", "columnIndex", "name"]);
+    await context.excel.sync();
+
+    const infoRowOffs = { row: tranTableRange.rowIndex - 2, col: tranTableRange.columnIndex };
+
+    // Count:
+    const countTransLabelRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 0, 1, 1);
+    countTransLabelRange.format.fill.clear();
+    countTransLabelRange.format.font.color = "#7e350e";
+    countTransLabelRange.format.font.bold = true;
+    countTransLabelRange.format.horizontalAlignment = "Right";
+    countTransLabelRange.values = [["Count:"]];
+
+    const countTransFormulaRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 1, 1, 1);
+    countTransFormulaRange.format.fill.color = "#f2f2f2";
+    countTransFormulaRange.format.font.color = "#7e350e";
+    countTransFormulaRange.format.font.bold = true;
+    countTransFormulaRange.format.horizontalAlignment = "Left";
+    countTransFormulaRange.formulas = [[`="  " & COUNTA(${tranTable.name}[${SpecialColumnNames.LunchId}])`]];
+
+    // Last successful sync:
+    const lastCompletedSyncLabelRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 3, 1, 1);
+    lastCompletedSyncLabelRange.format.fill.clear();
+    lastCompletedSyncLabelRange.format.font.color = "#7e350e";
+    lastCompletedSyncLabelRange.format.font.bold = true;
+    lastCompletedSyncLabelRange.format.horizontalAlignment = "Right";
+    lastCompletedSyncLabelRange.values = [["Last completed download data version / time:"]];
+
+    const lastCompletedSyncVersionRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 4, 1, 1);
+    lastCompletedSyncVersionRange.format.fill.color = "#f2f2f2";
+    lastCompletedSyncVersionRange.format.font.color = "#7e350e";
+    lastCompletedSyncVersionRange.format.font.bold = true;
+    lastCompletedSyncVersionRange.format.horizontalAlignment = "Left";
+    lastCompletedSyncVersionRange.formulas = [[`="  " & "${context.currentSync.version}"`]];
+
+    const lastCompletedSyncTimeRange = getRangeBasedOn(context.sheets.trans, infoRowOffs, 0, 5, 1, 1);
+    lastCompletedSyncTimeRange.format.fill.color = "#f2f2f2";
+    lastCompletedSyncTimeRange.format.font.color = "#7e350e";
+    lastCompletedSyncTimeRange.format.font.bold = true;
+    lastCompletedSyncTimeRange.format.horizontalAlignment = "Left";
+    lastCompletedSyncTimeRange.values = [[datetimeToExcel(context.currentSync.utc, true)]];
+    lastCompletedSyncTimeRange.numberFormat = [["  yyyy-mm-dd  HH:mm:ss"]];
+
+    await context.excel.sync();
 }
 
 export async function downloadTransactions(startDate: Date, endDate: Date, context: SyncContext) {
