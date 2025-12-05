@@ -169,8 +169,18 @@ async function applyColumnFormatting(
     context: SyncContext
 ) {
     const opApplyColsFormat = useOpTracker().startOperation("Apply formatting to table columns");
+    let opColsFormatBatch: null | TrackedOperation = null;
     try {
         for (let c = 0; c < tranTableColNames.length; c++) {
+            const progressApplyFormatBatchSize = 30;
+            if (c % progressApplyFormatBatchSize === 0) {
+                opColsFormatBatch?.setSuccess();
+                opColsFormatBatch = useOpTracker().startOperation(
+                    `Format table columns ${c}...${c + progressApplyFormatBatchSize},` +
+                        ` out of ${tranTableColNames.length}`
+                );
+            }
+
             const colName = tranTableColNames[c]!;
             const tabCol = tranTable.columns.getItemAt(c);
             const colSpec = tranColumnsSpecs.getByKey(colName);
@@ -187,28 +197,27 @@ async function applyColumnFormatting(
 
             const formatFn = colSpec.formatFn;
             if (formatFn) {
-                const opColFormat = useOpTracker().startOperation(`Formatting column '${colName}'`);
                 try {
                     const formatFnRes = formatFn(tabColRange.format, tabColRange.dataValidation, context);
                     await formatFnRes;
                     await context.excel.sync();
-                    opColFormat.setSuccess();
                 } catch (err) {
-                    opColFormat.setFailure(
-                        `The formatFn of the column spec for '${colName}' threw an error.` +
-                            `\n    '${errorTypeMessageString(err)}'` +
-                            `\n\n We will skip over this and continue, but this needs to be corrected.`,
-                        `\n\nERR:\n`,
-                        err
-                    );
+                    const errMsg =
+                        `The formatFn of the column spec for '${colName}' threw an error` +
+                        `\n(${errorTypeMessageString(err)})` +
+                        `\nWe will skip over this and continue, but this needs to be corrected.`;
+                    opColsFormatBatch?.addInfo(errMsg, err);
+                    opApplyColsFormat.addInfo(errMsg, err);
                 }
             }
         }
 
         await context.excel.sync();
 
+        opColsFormatBatch?.setSuccess();
         opApplyColsFormat.setSuccess();
     } catch (err) {
+        opColsFormatBatch?.setFailure(err);
         opApplyColsFormat.setFailureAndRethrow(err);
     }
 }
