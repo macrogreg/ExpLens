@@ -31,9 +31,11 @@ async function logBadResponse(response: Response, purposeDescription: string | n
 }
 
 export async function authorizedFetch(method: string, api: string, purposeDescription: string): Promise<string> {
-    const opFetch = useStatusLog().tracker.startOperation(`FETCH: ${purposeDescription}`, { method, api });
+    const opFetch = useStatusLog().tracker.startOperation("Calling remote API", purposeDescription);
 
     try {
+        opFetch.addInfo({ method, api });
+
         const apiToken = (await useSettings()).apiToken.value;
 
         if (!isNotNullOrWhitespaceStr(apiToken)) {

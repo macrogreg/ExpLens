@@ -12,7 +12,6 @@ import {
     formatTagGroupColumnHeader,
 } from "./transaction-tools";
 import { isNullOrWhitespace } from "src/util/string_util";
-import type { TagValuesCollection } from "./tags";
 import { parseTag } from "./tags";
 import { authorizedFetch } from "./fetch-tools";
 import type * as Lunch from "./lunchmoney-types";
@@ -284,7 +283,7 @@ async function readExistingTransactions(
         await context.excel.sync();
 
         for (let r = 0; r < tranTable.rows.count; r++) {
-            const progressUpdateStep = 100;
+            const progressUpdateStep = 250;
             if (r % progressUpdateStep === 0) {
                 opReadStep?.setSuccess();
                 opReadStep = useOpTracker().startOperation(
@@ -332,120 +331,165 @@ async function readExistingTransactions(
 }
 
 async function fetchAndParseTransactions(startDate: Date, endDate: Date): Promise<IndexedMap<number, Transaction>> {
-    // Fetch transactions:
-
-    console.log("Will fetch transactions from Lunch Money...");
-    const msStartFetchTransactions = performance.now();
-
-    const startUtcDateStr = formatDateUtc(startDate);
-    const endUtcDateStr = formatDateUtc(endDate);
-    const fetchedResponseText = await authorizedFetch(
-        "GET",
-        `transactions?start_date=${startUtcDateStr}&end_date=${endUtcDateStr}`,
-        `get all transactions between ${startUtcDateStr} and ${endUtcDateStr} UTC`
-    );
-
-    console.log(`Transactions fetched.\n    Time taken: ${performance.now() - msStartFetchTransactions} msec.`);
-
-    //transSheetProgressTracker.setPercentage(45);
-
-    // Parse fetched Transactions:
-    const fetched: { transactions: Lunch.Transaction[]; has_more: boolean } = JSON.parse(fetchedResponseText);
-    console.log("Transactions parsed. Length:", fetched.transactions.length, "Has_more:", fetched.has_more);
-    //console.debug("Fetched transactions:", fetched.transactions);
-
-    if (fetched.has_more) {
-        console.error("There are more transactions to fetch, but this is not yet supported!");
+    // Make sure start and end are in the right order:
+    if (startDate > endDate) {
+        const d = startDate;
+        startDate = endDate;
+        endDate = d;
     }
 
-    //transSheetProgressTracker.setPercentage(50);
+    const opFetchAndParse = useOpTracker().startOperation(
+        `Retrieve transactions from Lunch Money (${formatDateUtc(startDate)}...${formatDateUtc(endDate)})`
+    );
 
-    const receivedTrans = new IndexedMap<number, Transaction>();
+    try {
+        // Fetch the data in steps, one month at a time:
+        const allFetchedTrans = [] as Lunch.Transaction[];
 
-    // Parse Plaid data for each transaction:
-    let countPlaidMetadataObjectsParsed = 0;
-    for (let t = 0; t < fetched.transactions.length; t++) {
-        const fetchedTran = fetched.transactions[t];
-        if (!fetchedTran) {
-            continue;
-        }
+        let fetchStepStart = startDate;
+        while (fetchStepStart <= endDate) {
+            // Compute the boundaries of the fetch step (a month):
+            const fetchStepMonthEnd = new Date(
+                Date.UTC(fetchStepStart.getUTCFullYear(), fetchStepStart.getUTCMonth() + 1, 0)
+            );
 
-        const fetchedTranId = fetchedTran.id;
-        if (!Number.isInteger(fetchedTranId)) {
-            throw new Error(
-                `Cannot parse ID of fetched transaction #${t}. Integer ID expected. (Actual id='${fetchedTranId}'.)`
+            const fetchStepEnd = fetchStepMonthEnd < endDate ? fetchStepMonthEnd : endDate;
+
+            const fetchStepStartStr = formatDateUtc(fetchStepStart);
+            const fetchStepEndStr = formatDateUtc(fetchStepEnd);
+
+            // Fetch the data:
+            const fetchedResponseText = await authorizedFetch(
+                "GET",
+                `transactions?start_date=${fetchStepStartStr}&end_date=${fetchStepEndStr}`,
+                `get all transactions ${fetchStepStartStr}...${fetchStepEndStr}`
+            );
+
+            // Parse the data with a few defensive checks:
+            const opParseStep = useOpTracker().startOperation(
+                `Parse fetched transactions ${fetchStepStartStr}...${fetchStepEndStr}`
+            );
+            try {
+                const fetched: { transactions: Lunch.Transaction[]; has_more: boolean } =
+                    JSON.parse(fetchedResponseText);
+
+                if (fetched.has_more) {
+                    throw new Error(
+                        "The LunchMoney 'v1/transactions' API returned 'true' in the 'has_more' field." +
+                            "\n This was previously not supported by the backend, but it has apparently changed." +
+                            " This is a breaking change in the backend API. The ExpLense needs to be updated" +
+                            " and tested to account for this.\n Please reach out to the developers on GitHub."
+                    );
+                }
+
+                const countFetched = fetched.transactions.length;
+                for (let t = 0; t < countFetched; t++) {
+                    const tran = fetched.transactions[t];
+                    if (tran === undefined) {
+                        throw new Error(
+                            `fetched.transactions[${t}] is undefined, but fetched.transactions.length=${countFetched}`
+                        );
+                    }
+                    allFetchedTrans.push(tran);
+                }
+
+                opParseStep.setSuccess({ countFetched: fetched.transactions.length });
+            } catch (err) {
+                opParseStep.setFailureAndRethrow(err);
+            }
+
+            // Next fetch step starts the day after fetchStepEnd:
+            fetchStepStart = new Date(
+                Date.UTC(fetchStepEnd.getUTCFullYear(), fetchStepEnd.getUTCMonth(), fetchStepEnd.getUTCDate() + 1)
             );
         }
 
-        const tran: Transaction = {
-            trn: fetchedTran,
-            pld: null,
-            tag: new Map<string, Set<string>>(),
-            id: fetchedTranId,
-        };
+        // All transactions are fetched. Build lookup table by ID, and also parse the Plaid metadata:
 
-        receivedTrans.tryAdd(tran.id, tran);
+        const opHydrateTrans = useOpTracker().startOperation(
+            `Parse Tags, Plaid & other metadata, and hydrate ${allFetchedTrans.length} transactions`
+        );
 
-        const plaidDataStr = fetchedTran.plaid_metadata;
-        if (typeof plaidDataStr === "string") {
-            try {
-                const plaidMetadata: Lunch.PlaidMetadata = JSON.parse(plaidDataStr);
-                tran.pld = plaidMetadata;
-                countPlaidMetadataObjectsParsed++;
-            } catch (err) {
-                console.error(
-                    `Cannot parse plaid_metadata for fetched transaction #${t}.`,
-                    "plaidDataStr:",
-                    plaidDataStr
-                );
-                throw new Error(`Cannot parse plaid_metadata for fetched transaction #${t} (id=${fetchedTran?.id}).`, {
-                    cause: err,
-                });
+        const receivedTrans = new IndexedMap<number, Transaction>();
+
+        try {
+            // Parse additional data for each transaction:
+            let countPlaidMetadataObjectsParsed = 0;
+            for (let t = 0; t < allFetchedTrans.length; t++) {
+                const fetchedTran = allFetchedTrans[t];
+                if (!fetchedTran) {
+                    continue;
+                }
+
+                // Check for valid Lunch transaction ID:
+                const fetchedTranId = fetchedTran.id;
+                if (!Number.isInteger(fetchedTranId)) {
+                    throw new Error(
+                        `Cannot parse ID of fetched transaction #${t}. Integer ID expected. (Actual id='${fetchedTranId}'.)`
+                    );
+                }
+
+                // Create transaction data structure and add it to the list:
+                const tran: Transaction = {
+                    trn: fetchedTran,
+                    pld: null,
+                    tag: new Map<string, Set<string>>(),
+                    id: fetchedTranId,
+                };
+
+                receivedTrans.tryAdd(tran.id, tran);
+
+                // If Plaid metadata is present, parse it and add to the data:
+                const plaidDataStr = fetchedTran.plaid_metadata;
+                const hasPlaid =
+                    plaidDataStr !== undefined && plaidDataStr !== null && typeof plaidDataStr === "string";
+
+                if (hasPlaid) {
+                    const plaidMetadata: Lunch.PlaidMetadata = JSON.parse(plaidDataStr);
+                    tran.pld = plaidMetadata;
+                    countPlaidMetadataObjectsParsed++;
+                }
+
+                // For each tag of this transaction, and add it to the tag values collections:
+                const receivedTags: { name: string; id: number }[] = tran.trn.tags ?? [];
+                for (const tag of receivedTags) {
+                    // Parse the tag:
+                    const tagInfo = parseTag(tag.name);
+                    //console.debug(`Transaction '${tran.trn.id}'. tagInfo:`, tagInfo);
+
+                    // Add the tag to the list of this transaction:
+                    let groupTags = tran.tag.get(tagInfo.group);
+                    if (groupTags === undefined) {
+                        groupTags = new Set<string>();
+                        tran.tag.set(tagInfo.group, groupTags);
+                    }
+                    groupTags.add(tagInfo.value);
+                }
+
+                // opHydrateTrans.addInfo({
+                //     t,
+                //     fetchedTranId,
+                //     hasPlaid,
+                //     countTags: receivedTags.length,
+                //     countTagGroups: tran.tag.size,
+                // });
             }
+            opHydrateTrans.setSuccess({
+                countAllFetchedTrans: allFetchedTrans.length,
+                countPlaidMetadataObjectsParsed,
+                note:
+                    "(Not all transactions have Plaid Metadata, e.g., groups, split transactions, transactions" +
+                    " imported form sources other than Plaid...)",
+            });
+        } catch (err) {
+            opHydrateTrans.setFailureAndRethrow(err);
         }
+
+        opFetchAndParse.setSuccess();
+        return receivedTrans;
+    } catch (err) {
+        return opFetchAndParse.setFailureAndRethrow(err);
     }
-    console.log(
-        `Plaid Metadata objects parsed: ${countPlaidMetadataObjectsParsed} / ${fetched.transactions.length}.` +
-            "\n(Not all transactions will have Plaid Metadata. E.g., groups, split transactions, transactions" +
-            " imported form sources other than Plaid.)"
-    );
-
-    //transSheetProgressTracker.setPercentage(55);
-
-    // Parse Tags for all received transactions:
-
-    const allReceivedTags: TagValuesCollection = new Map<string, Set<string>>();
-
-    for (let t = 0; t < receivedTrans.length; t++) {
-        const tran = receivedTrans.getByIndex(t);
-        if (!tran || !tran.trn.tags) {
-            continue;
-        }
-
-        // For each tag of this transaction, and add it to the tag values collections:
-        const tags: { name: string; id: number }[] = tran.trn.tags;
-        for (const tag of tags) {
-            // Parse the tag:
-            const tagInfo = parseTag(tag.name);
-            //console.debug(`Transaction '${tran.trn.id}'. tagInfo:`, tagInfo);
-
-            // Add the tag to the list of this transaction:
-            if (!tran.tag.has(tagInfo.group)) {
-                tran.tag.set(tagInfo.group, new Set<string>());
-            }
-            tran.tag.get(tagInfo.group)!.add(tagInfo.value);
-
-            // Add the tag to the list of all received tags:
-            if (!allReceivedTags.has(tagInfo.group)) {
-                allReceivedTags.set(tagInfo.group, new Set<string>());
-            }
-            allReceivedTags.get(tagInfo.group)!.add(tagInfo.value);
-        }
-    }
-
-    console.log(`Received transactions contains tags from ${allReceivedTags.size} different groups.`);
-
-    return receivedTrans;
 }
 
 async function applyColumnFormatting(
@@ -714,6 +758,8 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
         const tranRowsToAdd: (string | boolean | number)[][] = [];
 
         const opMergeTrans = useOpTracker().startOperation("Merge received and existing transactions");
+        let opMergeTransStep: null | TrackedOperation = null;
+
         try {
             const colIndexLastSyncVersion = tranTableColNames.findIndex(
                 (cn) => cn === SpecialColumnNames.LastSyncVersion
@@ -724,7 +770,20 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 notComparedWithReceived: 0,
             };
 
-            for (const tran of receivedTrans) {
+            for (let t = 0; t < receivedTrans.length; t++) {
+                const mergeProgressUpdateStep = 250;
+                if (t % mergeProgressUpdateStep === 0) {
+                    opMergeTransStep?.setSuccess();
+                    opMergeTransStep = useOpTracker().startOperation(
+                        `Merge transactions ${t}...${t + mergeProgressUpdateStep}, out of ${receivedTrans.length}`
+                    );
+                }
+
+                const tran = receivedTrans.getByIndex(t);
+                if (tran === undefined) {
+                    continue;
+                }
+
                 // If Transaction already in table (existing):
                 const exTranRange = existingTrans.getByKey(tran.id);
                 if (exTranRange !== undefined) {
@@ -799,6 +858,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 }
             }
 
+            opMergeTransStep?.setSuccess();
             opMergeTrans.setSuccess({
                 countReceivedTrans: receivedTrans.length,
                 isReplaceExistingTrans: context.isReplaceExistingTransactions,
@@ -806,6 +866,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 countTranRowsToAdd: tranRowsToAdd.length,
             });
         } catch (err) {
+            opMergeTransStep?.setFailure(err);
             opMergeTrans.setFailureAndRethrow(err);
         }
 
@@ -817,11 +878,11 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             rowCount: tranRowsToAdd.length,
         });
         try {
-            const addChunkSize = 100;
+            const addChunkSize = 250;
             let addChungStart = 0;
             while (addChungStart < tranRowsToAdd.length) {
                 const opInsertRowsChunk = useOpTracker().startOperation(
-                    `Insert rows ${addChungStart}..${addChungStart + addChunkSize} of ${tranRowsToAdd.length}`
+                    `Insert rows ${addChungStart}...${addChungStart + addChunkSize} of ${tranRowsToAdd.length}`
                 );
                 try {
                     const tranRowsToAddChunk = tranRowsToAdd.slice(addChungStart, addChungStart + addChunkSize);
