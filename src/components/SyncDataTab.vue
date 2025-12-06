@@ -24,23 +24,32 @@
         </div>
 
         <div class="q-pa-sm" style="border: 1px lightgray solid; width: fit-content">
-            <q-input
-                ref="apiTokenTextfield"
-                filled
-                label="LunchMoney API Token"
-                v-model="apiToken"
-                :rules="[apiTokenRequiredRule]"
-                :dense="true"
-                :counter="false"
-                maxlength="200"
-                style="max-width: 450px; width: 100%; padding: 0 10px 20px 0"
-            />
+            <q-expansion-item
+                id="api-token-expansion"
+                v-model="isApiTokenAreaExpanded"
+                label="Lunch Money Access Token"
+                :caption="isApiTokenAreaExpanded ? '\u00A0' : apiTokenExpansionCaption"
+                dense
+                dense-toggle
+            >
+                <q-input
+                    ref="apiTokenTextfield"
+                    filled
+                    label="API Token from your LunchMoney app"
+                    v-model="apiToken"
+                    :rules="[apiTokenRequiredRule]"
+                    :dense="true"
+                    :counter="false"
+                    maxlength="200"
+                    style="max-width: 450px; width: 100%; padding: 0 10px 20px 0"
+                />
 
-            <q-checkbox
-                v-model="hasPersistApiTokenPermissionControl"
-                label="Store the API Token in the current documents (Unsecure!)"
-                style="font-size: smaller"
-            />
+                <q-checkbox
+                    v-model="hasPersistApiTokenPermissionControl"
+                    label="Store the API Token in the current documents (Unsecure!)"
+                    style="font-size: smaller"
+                />
+            </q-expansion-item>
         </div>
 
         <div class="date-inputs" style="display: flex; gap: 16px">
@@ -109,6 +118,12 @@
 
 <style scoped></style>
 
+<style>
+#api-token-expansion .q-focus-helper {
+    visibility: hidden;
+}
+</style>
+
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { formatDateLocal, formatDateTimeLocalLong, formatValue } from "src/util/format_util";
@@ -117,6 +132,7 @@ import { useOffice } from "src/composables/office-ready";
 import { type AppSettings, useSettings } from "src/composables/settings";
 import { downloadData } from "src/business/sync-driver";
 import { useOpTracker } from "src/status-tracker/composables/status-log";
+import { isNullOrWhitespace } from "src/util/string_util";
 
 const officeApiInitErrorMsg = ref("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
@@ -147,6 +163,18 @@ const toDateOrderRule = (val: string) => {
 
 const apiTokenTextfield = ref<QInput | null>(null);
 const apiToken = ref("");
+
+const isApiTokenAreaExpanded = ref(true);
+
+const apiTokenExpansionCaption = computed(() => {
+    if (!isNullOrWhitespace(apiToken.value)) {
+        const token = apiToken.value.trim();
+        if (token.length >= 9) {
+            return token.substring(0, 3) + "..." + token.substring(token.length - 3);
+        }
+    }
+    return "Expand and enter API Token!";
+});
 
 const showPersistApiTokenDialog = ref(false);
 const hasPersistApiTokenPermissionData = ref(false);
@@ -197,6 +225,12 @@ onMounted(async () => {
         const apiTokenSetting = appSettings.apiToken;
         apiToken.value = apiTokenSetting.value ?? "";
         hasPersistApiTokenPermissionData.value = apiToken.value.length > 0;
+
+        if (!isNullOrWhitespace(apiToken.value) && apiToken.value.trim().length >= 9) {
+            isApiTokenAreaExpanded.value = false;
+        } else {
+            isApiTokenAreaExpanded.value = true;
+        }
 
         // UI → settings:
         watch(apiToken, (newVal) => {
