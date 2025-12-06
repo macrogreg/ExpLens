@@ -189,7 +189,10 @@
                     </q-expansion-item>
                 </q-list></q-btn-dropdown
             >
-            <div class="status-log-title">Status:</div>
+            <div class="status-log-title">
+                Status:
+                <q-btn flat dense round size="sm" icon="expand_more" @click="statusLogProxy.alwaysDisplay = false" />
+            </div>
             <div class="status-log-textarea-div">
                 <textarea
                     ref="refTextArea"
@@ -326,13 +329,16 @@
     font-weight: 500;
     color: #455a64;
     padding: 5px 1px 1px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .status-log-textarea-div {
     width: 100%;
     height: 100%;
     box-sizing: border-box;
-    padding-bottom: 25px;
+    padding-bottom: 30px;
 }
 
 /* Note: the font size of the status info text is not expressed in terms of `rem`,          */
@@ -456,6 +462,19 @@ const startDragResizeState: {
     },
 };
 
+function setSuppressCaptureWindowErrorResizeObserverLoop(params: { suppress: boolean; useDelay: boolean }) {
+    const { suppress, useDelay } = params;
+    if (useDelay) {
+        setTimeout(() => {
+            void nextTick(() => {
+                statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(suppress);
+            });
+        }, 100);
+    } else {
+        statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(suppress);
+    }
+}
+
 function startDragResize(ev: MouseEvent | TouchEvent) {
     const getMouseY = (ev: MouseEvent | TouchEvent): number | undefined => {
         if ("touches" in ev) {
@@ -482,7 +501,7 @@ function startDragResize(ev: MouseEvent | TouchEvent) {
         document.removeEventListener("mouseup", upHandler);
         document.removeEventListener("touchend", upHandler);
 
-        statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(false);
+        setSuppressCaptureWindowErrorResizeObserverLoop({ suppress: false, useDelay: true });
     };
 
     const moveHandler = (ev: MouseEvent | TouchEvent) => {
@@ -509,7 +528,7 @@ function startDragResize(ev: MouseEvent | TouchEvent) {
         //console.debug(`LogView.startDragResize.moveHandler: height=${statusLogAreaHeight.value}.`);
     };
 
-    statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(true);
+    setSuppressCaptureWindowErrorResizeObserverLoop({ suppress: true, useDelay: false });
 
     document.addEventListener("mousemove", moveHandler);
     document.addEventListener("touchmove", moveHandler);
@@ -558,11 +577,7 @@ function triggerJumpResize() {
             // console.debug("LogView.triggerJumpResize.stepFrameFunction: TotalTime=", ts - firstTs);
 
             // Wait for 100ms and for one tick after that, then stop the ResizeObserverLoop error suppression:
-            setTimeout(() => {
-                void nextTick(() => {
-                    statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(false);
-                });
-            }, 100);
+            setSuppressCaptureWindowErrorResizeObserverLoop({ suppress: false, useDelay: true });
 
             isJumpResizeInProgress = false;
             return;
@@ -587,7 +602,7 @@ function triggerJumpResize() {
         setTimeout(stepFrameFunction, nextDurationMs);
     };
 
-    statusLog.setSuppressCaptureWindowErrorResizeObserverLoop(true);
+    setSuppressCaptureWindowErrorResizeObserverLoop({ suppress: true, useDelay: false });
     setTimeout(stepFrameFunction, jumpResizeConfig_DurationMs / remainSteps);
 }
 
@@ -606,8 +621,10 @@ const statusLogProxy = reactive({
 watch(
     () => statusLogProxy.alwaysDisplay,
     (newVal: boolean) => {
+        setSuppressCaptureWindowErrorResizeObserverLoop({ suppress: true, useDelay: false });
         statusLog.setDisplayMode(newVal ? "Always" : "DuringImportantOperations");
         statusLog.saveToLocalStorage();
+        setSuppressCaptureWindowErrorResizeObserverLoop({ suppress: false, useDelay: true });
     }
 );
 watch(
