@@ -30,13 +30,22 @@ async function logBadResponse(response: Response, purposeDescription: string | n
     });
 }
 
-export async function authorizedFetch(method: string, api: string, purposeDescription: string): Promise<string> {
+export async function authorizedFetch(
+    method: string,
+    api: string,
+    purposeDescription: string,
+    apiToken?: string
+): Promise<string> {
     const opFetch = useStatusLog().tracker.startOperation("Calling remote API", purposeDescription);
 
     try {
         opFetch.addInfo({ method, api });
 
-        const apiToken = (await useSettings()).apiToken.value;
+        if (apiToken !== undefined) {
+            opFetch.addInfo({ apiToken: `specified (${apiToken.length} chars)` });
+        } else {
+            apiToken = (await useSettings()).apiToken.value ?? undefined;
+        }
 
         if (!isNotNullOrWhitespaceStr(apiToken)) {
             throw new Error(`Cannot '${purposeDescription}', because no API Token is set.`);

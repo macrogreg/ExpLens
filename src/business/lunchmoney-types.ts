@@ -2,6 +2,16 @@
 /// See https://lunchmoney.dev/
 ///
 
+export interface User {
+    user_name: string;
+    user_email: string;
+    user_id: number;
+    account_id: number;
+    budget_name: string;
+    primary_currency: string;
+    api_key_label: string;
+}
+
 export interface Tag {
     id: number;
     name: string;

@@ -35,8 +35,8 @@
                 <q-input
                     ref="apiTokenTextfield"
                     filled
-                    label="API Token from your LunchMoney app"
-                    v-model="apiToken"
+                    label="API Token"
+                    v-model="apiTokenModel"
                     :rules="[apiTokenRequiredRule]"
                     :dense="true"
                     :counter="false"
@@ -49,6 +49,24 @@
                     label="Store the API Token in the current documents (Unsecure!)"
                     style="font-size: smaller"
                 />
+
+                <div style="padding: 0; margin: 0px; text-align: right">
+                    <q-btn
+                        :label="'\u00A0Apply\u00A0'"
+                        :loading="isDataOperationInProgress"
+                        :percentage="syncOperationProgressPercentage"
+                        color="primary"
+                        @click="checkAndApplyApiToken"
+                        class="q-ma-sm"
+                        dense
+                        no-caps
+                    />
+                </div>
+                <!-- prettier-ignore -->
+                <pre
+                    class="q-ma-xs"
+                    style="font-family: monospace; font-size: 10px; line-height: 1;"
+                >{{ apiTokenValidateResultMsg }}</pre>
             </q-expansion-item>
         </div>
 
@@ -79,7 +97,7 @@
 
         <q-btn
             label="Download"
-            :loading="0 <= syncOperationProgressPercentage && syncOperationProgressPercentage < 100"
+            :loading="isDataOperationInProgress"
             :percentage="syncOperationProgressPercentage"
             color="primary"
             @click="validateAndDownload"
@@ -132,7 +150,7 @@ import { useOffice } from "src/composables/office-ready";
 import { type AppSettings, useSettings } from "src/composables/settings";
 import { downloadData } from "src/business/sync-driver";
 import { useOpTracker } from "src/status-tracker/composables/status-log";
-import { isNullOrWhitespace } from "src/util/string_util";
+import { validateApiToken } from "src/business/validate-api-token";
 
 const officeApiInitErrorMsg = ref("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
@@ -162,18 +180,21 @@ const toDateOrderRule = (val: string) => {
 };
 
 const apiTokenTextfield = ref<QInput | null>(null);
-const apiToken = ref("");
+const apiTokenModel = ref("");
 
 const isApiTokenAreaExpanded = ref(true);
+const apiTokenValidateResultMsg = ref<string>("API token not verified.");
+const isApiTokenValid = ref<boolean | undefined>(undefined);
+const isApiTokenValidationInProgress = ref<boolean>(false);
 
 const apiTokenExpansionCaption = computed(() => {
-    if (!isNullOrWhitespace(apiToken.value)) {
-        const token = apiToken.value.trim();
-        if (token.length >= 9) {
-            return token.substring(0, 3) + "..." + token.substring(token.length - 3);
-        }
+    if (isApiTokenValid.value === undefined) {
+        return "Token not verified." + (isApiTokenAreaExpanded.value ? "" : " Expand to configure.");
     }
-    return "Expand and enter API Token!";
+
+    return isApiTokenValid.value
+        ? "Token is valid"
+        : "Token not valid." + (isApiTokenAreaExpanded.value ? "" : " Expand to configure.");
 });
 
 const showPersistApiTokenDialog = ref(false);
@@ -188,6 +209,61 @@ const hasPersistApiTokenPermissionControl = computed({
         }
     },
 });
+
+const apiTokenRequiredRule = (val: string) =>
+    (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
+
+async function checkApiToken(token: string) {
+    isApiTokenValidationInProgress.value = true;
+    try {
+        const { isValid, info } = await validateApiToken(token);
+        if (!isValid) {
+            apiTokenValidateResultMsg.value = info;
+        } else {
+            apiTokenValidateResultMsg.value =
+                "Token is valid." +
+                `\n Token moniker:     ${info.api_key_label}` +
+                `\n Grants access to:  ${info.budget_name}` +
+                `\n User:              ${info.user_name} (${info.user_email})`;
+        }
+        isApiTokenValid.value = isValid;
+        return isValid;
+    } finally {
+        isApiTokenValidationInProgress.value = false;
+    }
+}
+
+async function checkAndApplyApiToken(): Promise<string | undefined> {
+    if (!(await apiTokenTextfield.value?.validate())) {
+        return;
+    }
+
+    const token = apiTokenModel.value;
+    const isValid = await checkApiToken(token);
+
+    if (!isValid) {
+        return undefined;
+    }
+
+    try {
+        const appSettings = await useSettings();
+        const tokenAppSetting = appSettings.apiToken;
+        tokenAppSetting.value = token;
+
+        if (hasPersistApiTokenPermissionControl.value) {
+            await appSettings.storeApiToken();
+        } else {
+            // If permission is not given, we clear the token, even if it was persisted with permission earlier:
+            // (token will remain in settings, but will not be stored)
+            await appSettings.clearTokenStorage();
+        }
+    } catch (err) {
+        // We failed working with storage, but we already validated the token.
+        console.error("Error setting or storing API token in App Settings.", err);
+    }
+
+    return token;
+}
 
 function confirmPersistApiTokenDialog(choice: "yes" | "no") {
     if (choice === "yes") {
@@ -223,24 +299,18 @@ onMounted(async () => {
         appSettings = await useSettings();
 
         const apiTokenSetting = appSettings.apiToken;
-        apiToken.value = apiTokenSetting.value ?? "";
-        hasPersistApiTokenPermissionData.value = apiToken.value.length > 0;
+        apiTokenModel.value = apiTokenSetting.value ?? "";
+        hasPersistApiTokenPermissionData.value = apiTokenModel.value.length > 0;
 
-        if (!isNullOrWhitespace(apiToken.value) && apiToken.value.trim().length >= 9) {
-            isApiTokenAreaExpanded.value = false;
-        } else {
-            isApiTokenAreaExpanded.value = true;
-        }
+        const isLoadedTokenValid = await checkApiToken(apiTokenModel.value);
+        isApiTokenAreaExpanded.value = !isLoadedTokenValid;
 
-        // UI → settings:
-        watch(apiToken, (newVal) => {
-            apiTokenSetting.value = newVal;
-        });
-
-        // settings → UI:
+        // If token in app settings changes, update the us immediately:
+        // (other direction only via apply or sync button)
         watch(apiTokenSetting, (newVal) => {
-            apiToken.value = newVal ?? "";
+            apiTokenModel.value = newVal ?? "";
         });
+
         op.setSuccess();
     } catch (err) {
         op.setFailureAndRethrow(err);
@@ -260,13 +330,16 @@ function getDefaultSyncStartDate(today: Date) {
 }
 
 const syncOperationProgressPercentage = ref<number>(-1);
+const isDataOperationInProgress = computed<boolean>(() => {
+    const isDataSync = 0 <= syncOperationProgressPercentage.value && syncOperationProgressPercentage.value < 100;
+    const isTokenValidation = isApiTokenValidationInProgress.value === true;
+    return isDataSync || isTokenValidation;
+});
+
 const syncStartDate = ref(getDefaultSyncStartDate(now));
 const syncEndDate = ref(formatDateLocal(now));
 const syncStartDateError = ref("");
 const syncEndDateError = ref("");
-
-const apiTokenRequiredRule = (val: string) =>
-    (val && val.trim().length > 0) || "API token must not be empty or whitespace.";
 
 async function validateAndDownload() {
     // Date validation
@@ -293,7 +366,7 @@ async function validateAndDownload() {
     }
 
     // Highlight errors, do not proceed if any
-    if (!(await apiTokenTextfield.value?.validate()) || syncStartDateError.value || syncEndDateError.value) {
+    if (syncStartDateError.value || syncEndDateError.value) {
         return;
     }
 
@@ -301,19 +374,9 @@ async function validateAndDownload() {
         return;
     }
 
-    const loadedAppSettings = await useSettings();
-
-    // Set API token
-
-    try {
-        if (hasPersistApiTokenPermissionControl.value) {
-            await loadedAppSettings.storeApiToken();
-        } else {
-            // If permission is not given, we clear the token, even if it was persisted with permission earlier:
-            await loadedAppSettings.clearTokenStorage();
-        }
-    } catch (err) {
-        console.error("Error setting or storing API token.", err);
+    if ((await checkAndApplyApiToken()) === undefined) {
+        isApiTokenAreaExpanded.value = true;
+        return;
     }
 
     try {
