@@ -15,7 +15,7 @@ export function getObfuscatedToken(token: string) {
     const tokenLen = token.length;
     return tokenLen < 9
         ? `(${tokenLen} chars)`
-        : token.substring(0, 3) + "..." + token.substring(token.length - 3) + `(${tokenLen} chars)`;
+        : token.substring(0, 3) + "..." + token.substring(token.length - 3) + ` (${tokenLen} chars)`;
 }
 
 export async function validateApiToken(
