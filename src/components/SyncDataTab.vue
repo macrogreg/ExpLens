@@ -229,9 +229,9 @@ async function checkApiToken(token: string): Promise<boolean> {
         } else {
             apiTokenValidateResultMsg.value =
                 "Token is valid." +
-                `\n Token moniker:    ${info.api_key_label}` +
-                `\n Grants access to: ${info.budget_name}` +
-                `\n User:             ${info.user_name} (${info.user_email})`;
+                `\n Token moniker:    ${info.api_key_label ?? "<Not Named>"}` +
+                `\n Grants access to: ${info.budget_name ?? "<Unnamed Budget>"}` +
+                `\n User:             ${info.user_name ?? "Unnamed User"} (${info.user_email ?? "NoEmail"})`;
         }
         isApiTokenValid.value = isValid;
         return isValid;
