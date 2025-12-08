@@ -1,8 +1,8 @@
 <template>
     <div class="text-left q-gutter-md">
-        <h5 class="q-ma-md">Sync Data</h5>
+        <h2 class="q-ma-md tab-main-header">Synchronize Bank Data</h2>
 
-        <div class="q-pa-sm" style="border: 1px lightgray solid; font-size: smaller">
+        <div class="q-pa-sm form-group-border" style="font-size: smaller">
             <div v-if="officeApiInitErrorMsg" style="color: red">{{ officeApiInitErrorMsg }}</div>
             <div v-else-if="officeApiEnvInfo">
                 <div>
@@ -23,7 +23,7 @@
             <div v-else>Office Add-In environment not yet initialized.</div>
         </div>
 
-        <div class="q-pa-sm" style="border: 1px lightgray solid; width: fit-content">
+        <div class="q-pa-sm form-group-border" style="width: fit-content">
             <q-expansion-item
                 id="api-token-expansion"
                 v-model="isApiTokenAreaExpanded"
@@ -73,39 +73,41 @@
             </q-expansion-item>
         </div>
 
-        <div class="date-inputs" style="display: flex; gap: 16px">
-            <div style="max-width: 220px; width: 100%">
-                <q-input
-                    filled
-                    label="FROM"
-                    v-model="syncStartDate"
-                    type="date"
-                    :error="!!syncStartDateError"
-                    :rules="[syncStartDateAgeRule]"
-                />
-                <div v-if="syncStartDateError" class="text-negative q-mt-xs">{{ syncStartDateError }}</div>
+        <div class="q-pa-sm form-group-border" style="width: fit-content">
+            <div class="date-inputs" style="display: flex; gap: 16px">
+                <div style="max-width: 220px; width: 100%">
+                    <q-input
+                        filled
+                        label="FROM"
+                        v-model="syncStartDate"
+                        type="date"
+                        :error="!!syncStartDateError"
+                        :rules="[syncStartDateAgeRule]"
+                    />
+                    <div v-if="syncStartDateError" class="text-negative q-mt-xs">{{ syncStartDateError }}</div>
+                </div>
+                <div style="max-width: 220px; width: 100%">
+                    <q-input
+                        filled
+                        label="TO"
+                        v-model="syncEndDate"
+                        type="date"
+                        :error="!!syncEndDateError"
+                        :rules="[toDateOrderRule, toDateAgeRule]"
+                    />
+                    <div v-if="syncEndDateError" class="text-negative q-mt-xs">{{ syncEndDateError }}</div>
+                </div>
             </div>
-            <div style="max-width: 220px; width: 100%">
-                <q-input
-                    filled
-                    label="TO"
-                    v-model="syncEndDate"
-                    type="date"
-                    :error="!!syncEndDateError"
-                    :rules="[toDateOrderRule, toDateAgeRule]"
-                />
-                <div v-if="syncEndDateError" class="text-negative q-mt-xs">{{ syncEndDateError }}</div>
-            </div>
-        </div>
 
-        <q-btn
-            label="Download"
-            :loading="isDataOperationInProgress"
-            :percentage="syncOperationProgressPercentage"
-            color="primary"
-            @click="validateAndDownload"
-            class="q-mt-md"
-        />
+            <q-btn
+                label="Download"
+                :loading="isDataOperationInProgress"
+                :percentage="syncOperationProgressPercentage"
+                color="primary"
+                @click="validateAndDownload"
+                class="q-mt-md"
+            />
+        </div>
     </div>
 
     <q-dialog v-model="showPersistApiTokenDialog" persistent>
@@ -142,6 +144,10 @@
 <style>
 #api-token-expansion .q-focus-helper {
     visibility: hidden;
+}
+
+.form-group-border {
+    border: 1px lightgray solid;
 }
 </style>
 

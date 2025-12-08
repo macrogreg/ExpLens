@@ -7,15 +7,25 @@
                 <img src="/icons/favicon-32x32.png" alt="Logo" class="title-logo" />
             </div>
 
-            <q-tabs v-model="tab" align="left" class="q-mb-md">
-                <q-tab name="syncData" label="Sync Data" />
-                <q-tab name="advanced" label="Advanced" />
+            <q-tabs v-model="activeTab" inline-label align="center" class="q-mb-md" indicator-color="tab-bar-active">
+                <q-tab name="sync" label="Sync" icon="currency_exchange" />
+                <q-tab name="analyze" label="Analyze" icon="analytics" />
+                <q-tab name="settings" label="Settings" icon="settings" />
             </q-tabs>
 
-            <q-separator class="q-mb-lg" />
+            <q-separator class="q-mb-sm" />
 
-            <sync-data-tab v-if="tab === 'syncData'" />
-            <advanced-tab v-if="tab === 'advanced'" />
+            <q-tab-panels v-model="activeTab" keep-alive animated>
+                <q-tab-panel name="sync" class="q-pa-none">
+                    <SyncTab />
+                </q-tab-panel>
+                <q-tab-panel name="analyze" class="q-pa-none">
+                    <AnalyzeTab />
+                </q-tab-panel>
+                <q-tab-panel name="settings" class="q-pa-none">
+                    <SettingsTab />
+                </q-tab-panel>
+            </q-tab-panels>
         </div>
     </q-page>
 </template>
@@ -58,15 +68,43 @@
 }
 </style>
 
+<style lang="css">
+.bg-tab-bar-active {
+    background: #1f69c2;
+}
+.text-tab-bar-active {
+    color: #1f69c2;
+}
+.tab-main-header {
+    font-family: "Aptos", "Segoe UI", "Roboto", "-apple-system", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 24px;
+    font-weight: 500;
+    height: 32px;
+    letter-spacing: normal;
+    line-height: 32px;
+    margin-block-end: 16px;
+    margin-block-start: 16px;
+    margin-bottom: 16px;
+    margin-inline-end: 16px;
+    margin-inline-start: 16px;
+    margin-left: 16px;
+    margin-right: 16px;
+    margin-top: 10px;
+    margin-bottom: 20px;
+    -webkit-font-smoothing: antialiased;
+}
+</style>
+
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 
 console.debug("ExpLens Excel-AddIn: Loading IndexPage...");
 
 onMounted(async () => {});
-import SyncDataTab from "components/SyncDataTab.vue";
-import AdvancedTab from "components/AdvancedTab.vue";
+import SyncTab from "components/SyncTab.vue";
+import AnalyzeTab from "components/AnalyzeTab.vue";
+import SettingsTab from "components/SettingsTab.vue";
 import { AddInAppVersion } from "src/composables/app-version";
 
-const tab = ref("syncData");
+const activeTab = ref("sync");
 </script>
