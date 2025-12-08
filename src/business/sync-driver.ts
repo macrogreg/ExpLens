@@ -14,7 +14,7 @@ import { useStatusLog } from "src/status-tracker/composables/status-log";
 export type SyncContext = {
     excel: Excel.RequestContext;
     currentSync: { version: number; utc: Date };
-    isReplaceExistingTransactions: boolean;
+    isUpdateExistingTransactions: boolean;
     progressPercentage: Ref<number>;
     sheets: {
         tags: Excel.Worksheet;
@@ -37,7 +37,7 @@ let isSyncInProgress = false;
 export async function downloadData(
     startDate: Date,
     endDate: Date,
-    replaceExistingTransactions: boolean,
+    updateExistingTransactions: boolean,
     syncOperationProgressPercentage: Ref<number>
 ): Promise<void> {
     const statusLog = useStatusLog();
@@ -47,9 +47,21 @@ export async function downloadData(
     }
 
     const opDownloadData = statusLog.tracker.startOperation("Download Data", {
-        replaceExistingTransactions,
+        updateExistingTransactions,
     });
     opDownloadData.addInfo({ startDate, endDate });
+
+    // Work around a Lunch Money Bug that prevents downloads for only one day.
+    // ToDo: This bug has been reported. Depending on their response, we need to either remove
+    // this hack, or filter transactions after fetching to respect the set dates.
+    if (
+        startDate.getFullYear() === endDate.getFullYear() &&
+        startDate.getMonth() === endDate.getMonth() &&
+        startDate.getDate() === endDate.getDate()
+    ) {
+        endDate.setDate(endDate.getDate() + 1);
+        opDownloadData.addInfo("Moved End Date one day later to work about a Lunch Money bug", { startDate, endDate });
+    }
 
     let prevImportantOperationOngoing = true;
     try {
@@ -80,7 +92,7 @@ export async function downloadData(
             const syncCtx: SyncContext = {
                 excel: context,
                 currentSync,
-                isReplaceExistingTransactions: replaceExistingTransactions,
+                isUpdateExistingTransactions: updateExistingTransactions,
                 progressPercentage: syncOperationProgressPercentage,
                 sheets: {
                     trans: transSheet,

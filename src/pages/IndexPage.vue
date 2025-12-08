@@ -8,9 +8,24 @@
             </div>
 
             <q-tabs v-model="activeTab" inline-label align="center" class="q-mb-md" indicator-color="tab-bar-active">
-                <q-tab name="sync" label="Sync" icon="currency_exchange" />
-                <q-tab name="analyze" label="Analyze" icon="analytics" />
-                <q-tab name="settings" label="Settings" icon="settings" />
+                <q-tab name="sync">
+                    <q-icon name="currency_exchange" size="sm" />
+                    <q-tooltip anchor="bottom middle" self="top middle" :offset="[5, 5]" class="tooltip-semitransp">
+                        Synchronize Bank Data
+                    </q-tooltip>
+                </q-tab>
+                <q-tab name="analyze">
+                    <q-icon name="analytics" size="sm" />
+                    <q-tooltip anchor="bottom middle" self="top middle" :offset="[5, 5]" class="tooltip-semitransp">
+                        Analyze Transactions
+                    </q-tooltip>
+                </q-tab>
+                <q-tab name="settings">
+                    <q-icon name="settings" size="sm" />
+                    <q-tooltip anchor="bottom middle" self="top middle" :offset="[5, 5]" class="tooltip-semitransp">
+                        App Settings
+                    </q-tooltip>
+                </q-tab>
             </q-tabs>
 
             <q-separator class="q-mb-sm" />
@@ -69,6 +84,12 @@
 </style>
 
 <style lang="css">
+.tooltip-semitransp {
+    background-color: rgba(117, 117, 117, 0.8) !important;
+    color: white;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
 .bg-tab-bar-active {
     background: #1f69c2;
 }

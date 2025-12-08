@@ -356,7 +356,7 @@ export class TrackedOperation {
         const lineIndent = NewLineString + baseFormatIndent(this.#extraBaseIndentSpaces) + indent;
 
         const trackStr =
-            `${tsStr}| ${this.#operationIdStr}| ${tranMon}: ${indent}${this.#name}:` +
+            `${tsStr}|${this.#operationIdStr}|${tranMon}: ${indent}${this.#name}:` +
             ` Specified Info has ${errors.length} Error objects. Data included in log.` +
             (isConsoleEnabled
                 ? lineIndent + "Will dump additional details to console.error."

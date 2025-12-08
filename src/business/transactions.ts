@@ -382,6 +382,24 @@ async function fetchAndParseTransactions(startDate: Date, endDate: Date): Promis
                     );
                 }
 
+                // Defensive against some undocumented Lunch Money behavior:
+                if (fetched.transactions === undefined) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const errorField = (fetched as any).error;
+                    if (errorField) {
+                        throw new Error(
+                            `LunchMoney returned a non-error-code response,` +
+                                ` but the payload contains an error message instead of data:` +
+                                `\n "${errorField}"`
+                        );
+                    } else {
+                        throw new Error(
+                            `LunchMoney returned a non-error-code response,` +
+                                ` but the payload contains does not contain expected data.`
+                        );
+                    }
+                }
+
                 const countFetched = fetched.transactions.length;
                 for (let t = 0; t < countFetched; t++) {
                     const tran = fetched.transactions[t];
@@ -788,7 +806,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
                 const exTranRange = existingTrans.getByKey(tran.id);
                 if (exTranRange !== undefined) {
                     // If replacing existing transitions is NOT required, just skip it:
-                    if (!context.isReplaceExistingTransactions) {
+                    if (!context.isUpdateExistingTransactions) {
                         countExistingTransFound.notComparedWithReceived++;
                         continue;
                     }
@@ -861,7 +879,7 @@ export async function downloadTransactions(startDate: Date, endDate: Date, conte
             opMergeTransStep?.setSuccess();
             opMergeTrans.setSuccess({
                 countReceivedTrans: receivedTrans.length,
-                isReplaceExistingTrans: context.isReplaceExistingTransactions,
+                isReplaceExistingTrans: context.isUpdateExistingTransactions,
                 countExistingTransFound,
                 countTranRowsToAdd: tranRowsToAdd.length,
             });
