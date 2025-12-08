@@ -371,61 +371,6 @@ function confirmPersistApiTokenDialog(choice: "yes" | "no") {
     showPersistApiTokenDialog.value = false;
 }
 
-onMounted(async () => {
-    const op = useOpTracker().startOperation("ExpLens Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
-    try {
-        try {
-            officeApiEnvInfo.value = await useOffice(true);
-        } catch (err) {
-            if (err instanceof Error) {
-                officeApiInitErrorMsg.value = err.message;
-            } else {
-                officeApiInitErrorMsg.value = "Unexpected error while getting office APIs ready: " + formatValue(err);
-            }
-            op.setFailure("Error getting office APIs ready. AddIn will not work!", {
-                message: officeApiInitErrorMsg.value,
-                error: err,
-            });
-            console.error("Error getting office APIs ready. AddIn will not work!", {
-                message: officeApiInitErrorMsg.value,
-                error: err,
-            });
-            return;
-        }
-
-        officeApiInitErrorMsg.value = "";
-
-        appSettings = await useSettings();
-
-        const loadedApiToken = appSettings.apiToken.value ?? "";
-        apiTokenModel.value = loadedApiToken;
-        hasPersistApiTokenPermissionData.value = loadedApiToken.length > 0;
-
-        const isLoadedTokenValid = await checkApiToken(loadedApiToken);
-        isApiTokenAreaExpanded.value = !isLoadedTokenValid;
-
-        // If token in app settings changes, update the us immediately:
-        // (other direction only via apply or sync button)
-        watch(appSettings.apiToken, async (newVal) => {
-            const newToken = newVal ?? "";
-            const prevModelVal = apiTokenModel.value;
-            if (prevModelVal !== newToken) {
-                apiTokenModel.value = newToken;
-                await checkApiToken(newToken);
-            }
-        });
-
-        reinitDownloadDatesQuickSelectOptions();
-        applyDownloadDatesQuickSelect(
-            downloadDatesQuickSelectOptions.lastSync ?? downloadDatesQuickSelectOptions.recent
-        );
-
-        op.setSuccess();
-    } catch (err) {
-        op.setFailureAndRethrow(err);
-    }
-});
-
 const downloadDatesQuickSelectOptions = reactive({
     lastSync: null as null | { start: string; end: string },
     recent: null as null | { start: string; end: string },
@@ -564,4 +509,59 @@ async function validateAndDownload() {
         syncOperationProgressPercentage.value = -1;
     }
 }
+
+onMounted(async () => {
+    const op = useOpTracker().startOperation("ExpLens Excel-AddIn: SyncData Tab mounted. Getting Office API ready...");
+    try {
+        try {
+            officeApiEnvInfo.value = await useOffice(true);
+        } catch (err) {
+            if (err instanceof Error) {
+                officeApiInitErrorMsg.value = err.message;
+            } else {
+                officeApiInitErrorMsg.value = "Unexpected error while getting office APIs ready: " + formatValue(err);
+            }
+            op.setFailure("Error getting office APIs ready. AddIn will not work!", {
+                message: officeApiInitErrorMsg.value,
+                error: err,
+            });
+            console.error("Error getting office APIs ready. AddIn will not work!", {
+                message: officeApiInitErrorMsg.value,
+                error: err,
+            });
+            return;
+        }
+
+        officeApiInitErrorMsg.value = "";
+
+        appSettings = await useSettings();
+
+        const loadedApiToken = appSettings.apiToken.value ?? "";
+        apiTokenModel.value = loadedApiToken;
+        hasPersistApiTokenPermissionData.value = loadedApiToken.length > 0;
+
+        const isLoadedTokenValid = await checkApiToken(loadedApiToken);
+        isApiTokenAreaExpanded.value = !isLoadedTokenValid;
+
+        // If token in app settings changes, update the us immediately:
+        // (other direction only via apply or sync button)
+        watch(appSettings.apiToken, async (newVal) => {
+            const newToken = newVal ?? "";
+            const prevModelVal = apiTokenModel.value;
+            if (prevModelVal !== newToken) {
+                apiTokenModel.value = newToken;
+                await checkApiToken(newToken);
+            }
+        });
+
+        reinitDownloadDatesQuickSelectOptions();
+        applyDownloadDatesQuickSelect(
+            downloadDatesQuickSelectOptions.lastSync ?? downloadDatesQuickSelectOptions.recent
+        );
+
+        op.setSuccess();
+    } catch (err) {
+        op.setFailureAndRethrow(err);
+    }
+});
 </script>
