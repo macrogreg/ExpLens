@@ -1,19 +1,24 @@
 <template>
-    <div class="text-left q-gutter-md">
+    <div class="text-left q-gutter-md" style="width: fit-content">
         <h2 class="q-ma-md tab-main-header">Synchronize Bank Data</h2>
 
-        <div v-if="officeApiInitErrorMsg" class="q-pa-sm form-group-border" style="font-size: smaller; color: red">
+        <div
+            v-if="officeApiInitErrorMsg"
+            class="q-pa-sm form-group-border"
+            style="font-size: smaller; color: red; width: auto"
+        >
             {{ officeApiInitErrorMsg }}
         </div>
         <div
             v-if="isNullOrWhitespace(officeApiInitErrorMsg) && officeApiEnvInfo === null"
             class="q-pa-sm form-group-border"
-            style="font-size: smaller"
+            style="font-size: smaller; width: auto"
         >
             Office Add-In environment not initialized (yet?).
         </div>
 
-        <div class="q-pa-sm form-group-border" style="width: fit-content">
+        <!-- div(API Token) { -->
+        <div class="q-pa-sm form-group-border" style="width: auto">
             <q-expansion-item
                 id="api-token-expansion"
                 v-model="isApiTokenAreaExpanded"
@@ -36,9 +41,10 @@
                 <q-checkbox
                     v-model="hasPersistApiTokenPermissionControl"
                     :disable="isDataOperationInProgress"
-                    label="Store the API Token in the current documents (Unsecure!)"
-                    style="font-size: smaller"
-                />
+                    style="font-size: smaller; line-height: normal"
+                    >Store the API Token in the current document<br />
+                    <span style="font-size: smaller">(Unsecure!)</span></q-checkbox
+                >
 
                 <div style="padding: 0; margin: 0px; text-align: right">
                     <q-btn
@@ -60,12 +66,13 @@
                         lineHeight: 1,
                         color: (!isApiTokenValidationInProgress && !isApiTokenValid) ? 'red' : 'black'
                     }"
-
                 >{{ apiTokenValidateResultMsg }}</pre>
             </q-expansion-item>
         </div>
+        <!-- } div(API Token) -->
 
-        <div class="q-pa-sm form-group-border" style="width: fit-content">
+        <!-- div(Download Transactions) { -->
+        <div class="q-pa-sm form-group-border" style="width: auto">
             <div class="text-weight-bold q-mb-xs" style="font-size: 0.9rem">Download transactions for dates:</div>
             <!-- prettier-ignore -->
             <div class="q-mb-sm">
@@ -121,7 +128,9 @@
                         :rules="[syncDateAgeRule]"
                         @update:model-value="downloadStartDateError = ''"
                     />
-                    <div v-if="downloadStartDateError" class="text-negative q-mt-xs">{{ downloadStartDateError }}</div>
+                    <div v-if="downloadStartDateError" class="text-negative q-mt-xs">
+                        {{ downloadStartDateError }}
+                    </div>
                 </div>
                 <div style="max-width: 220px; width: 100%">
                     <q-input
@@ -168,8 +177,10 @@
                 class="q-ma-xs block q-mx-auto"
             />
         </div>
+        <!-- } div(Download Transactions) -->
 
-        <div class="q-pa-sm form-group-border" style="width: fit-content">
+        <!-- div(Upload Transactions) { -->
+        <div class="q-pa-sm form-group-border" style="width: auto">
             <div class="text-weight-bold text-grey-6 q-mb-xs" style="font-size: 0.9rem">Upload transactions:</div>
             <div class="text-weight-bold text-grey-6 q-mb-sm" style="font-size: 0.7rem">
                 Only modifications to Categories and Tags will be uploaded.<br />
@@ -190,26 +201,29 @@
                 class="q-ma-xs block q-mx-auto"
             />
         </div>
-    </div>
+        <!-- } div(Upload Transactions) -->
 
-    <div class="q-pa-sm q-mt-md q-mb-sm form-group-border" style="font-size: smaller">
-        <div v-if="officeApiEnvInfo">
-            <div>
-                Connected to MS Office. Host: '{{ officeApiEnvInfo.host ?? "null" }}'; Platform: '{{
-                    officeApiEnvInfo.platform ?? "null"
-                }}'.
+        <!-- div(Office API status) { -->
+        <div class="q-pa-sm q-mt-md q-mb-sm form-group-border" style="font-size: smaller; width: auto">
+            <div v-if="officeApiEnvInfo">
+                <div>
+                    Connected to MS Office. Host: '{{ officeApiEnvInfo.host ?? "null" }}'; Platform: '{{
+                        officeApiEnvInfo.platform ?? "null"
+                    }}'.
+                </div>
+                <div v-if="appSettings">
+                    Last sync:
+                    {{
+                        appSettings.lastCompletedSyncUtc.value
+                            ? formatDateTimeLocalLong(appSettings.lastCompletedSyncUtc.value)
+                            : "never"
+                    }}
+                    (#{{ appSettings.lastCompletedSyncVersion.value }}).
+                </div>
             </div>
-            <div v-if="appSettings">
-                Last sync:
-                {{
-                    appSettings.lastCompletedSyncUtc.value
-                        ? formatDateTimeLocalLong(appSettings.lastCompletedSyncUtc.value)
-                        : "never"
-                }}
-                (#{{ appSettings.lastCompletedSyncVersion.value }}).
-            </div>
+            <div v-else>Office Add-In environment not initialized (yet?).</div>
         </div>
-        <div v-else>Office Add-In environment not initialized (yet?).</div>
+        <!-- } div(Office API status) -->
     </div>
 
     <q-dialog v-model="showPersistApiTokenDialog" persistent>
