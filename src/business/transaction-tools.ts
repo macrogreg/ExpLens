@@ -7,6 +7,8 @@ import { IndexedMap } from "./IndexedMap";
 import { useStatusLog } from "src/status-tracker/composables/status-log";
 import { EventLevelKind } from "src/status-tracker/models/EventLevelKind";
 
+const ApplyReadOnlyCellValidationOptions = { usePrompt: false, useRule: false } as const;
+
 export interface Transaction {
     trn: Lunch.Transaction;
     pld: Lunch.PlaidMetadata | null;
@@ -18,11 +20,11 @@ const TagColumnsPlaceholder = "<Tag Groups Columns>";
 const TagGroupColumnNamePrefix = `Tag${TagGroupSeparator}`;
 
 export const SpecialColumnNames = {
-    LunchId: "LunchId",
-    LastSyncVersion: "LastSyncVersion",
+    LunchId: "LunchId" as const,
+    LastSyncVersion: "LastSyncVersion" as const,
 };
 
-const AccountingWithMinusFormatStr = `_($* #,##0.00_);_($* -#,##0.00_);_($* "-"??_);_(@_)`;
+const AccountingWithMinusFormatStr = `_($* #,##0.00_);_($* -#,##0.00_);_($* "-"??_);_(@_)` as const;
 
 type ValueExtractor = (trans: Transaction) => string | boolean | number | null | undefined;
 
@@ -38,8 +40,6 @@ export interface TransactionColumnSpec {
     numberFormat: null | string;
     formatFn: null | TransactionColumnFormatter;
 }
-
-const ApplyReadOnlyCellValidationOptions = { usePrompt: false, useRule: true };
 
 const transactionColumnsSpecs: TransactionColumnSpec[] = [
     transColumn("date", (t) => timeStrToExcel(t.trn.date), "yyyy-mm-dd"),
@@ -57,11 +57,14 @@ const transactionColumnsSpecs: TransactionColumnSpec[] = [
             return lowTl;
         },
         null,
-        async (format, _, context) => {
+        async (format, validation, context) => {
             format.font.load(["size"]);
             await context.excel.sync();
             format.font.size = Math.max(format.font.size - 2, 9);
             format.horizontalAlignment = "Left";
+
+            const stdRoValFn = getApplyReadOnlyCellValidationFn();
+            await stdRoValFn?.(format, validation, context);
         }
     ),
 
@@ -281,11 +284,7 @@ function transColumn(
         name: name.trim(),
         valueFn,
         numberFormat,
-        formatFn:
-            formatFn ??
-            (ApplyReadOnlyCellValidationOptions.usePrompt || ApplyReadOnlyCellValidationOptions.useRule
-                ? applyReadOnlyCellValidation
-                : null),
+        formatFn: formatFn ?? getApplyReadOnlyCellValidationFn(),
     };
 }
 
@@ -408,6 +407,12 @@ function J(vals: (string | null | undefined)[] | null | undefined, separator: st
         return null;
     }
     return vals.map((v) => (isNullOrWhitespace(v) ? "*" : v)).join(separator);
+}
+
+function getApplyReadOnlyCellValidationFn(): null | TransactionColumnFormatter {
+    return ApplyReadOnlyCellValidationOptions.usePrompt || ApplyReadOnlyCellValidationOptions.useRule
+        ? applyReadOnlyCellValidation
+        : null;
 }
 
 function applyReadOnlyCellValidation(

@@ -536,14 +536,19 @@ async function applyColumnFormatting(
                 continue;
             }
 
+            const numFormat = colSpec.numberFormat;
+            const formatFn = colSpec.formatFn;
+
+            if (numFormat === null && formatFn === null) {
+                continue;
+            }
+
             const tabColRange = tabCol.getDataBodyRange();
 
-            const numFormat = colSpec.numberFormat;
             if (numFormat) {
                 tabColRange.numberFormat = [[numFormat]];
             }
 
-            const formatFn = colSpec.formatFn;
             if (formatFn) {
                 try {
                     const formatFnRes = formatFn(tabColRange.format, tabColRange.dataValidation, context);
