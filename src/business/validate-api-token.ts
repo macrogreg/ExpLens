@@ -24,7 +24,7 @@ export async function validateApiToken(
     const statusLog = useStatusLog();
 
     if (isWorkInProgress === true) {
-        return { isValid: false, info: "Cannot validate token, because validation is already in progress." };
+        return { isValid: false, info: "Cannot validate token:\n Validation already in progress." };
     }
 
     const tokenView = getObfuscatedToken(tokenToValidate);

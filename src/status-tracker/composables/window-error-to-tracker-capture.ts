@@ -113,6 +113,8 @@ const accumulator_ResizeObserverLoopCommonError = {
     privates: {
         expectedMessage: "ResizeObserver loop completed with undelivered notifications." as const,
         accumulationPeriodMsec: 5000 as const,
+        suppressPerPeriodThreshold: 5 as const,
+        observeInitialEvent: false as const,
 
         currentAccumulator: null as null | ReturnType<typeof createEventAccumulator>,
     },
@@ -131,13 +133,21 @@ const accumulator_ResizeObserverLoopCommonError = {
             return currAcc;
         }
 
-        const newAcc = createEventAccumulator(tracker);
+        const newAcc = createEventAccumulator(
+            tracker,
+            accumulator_ResizeObserverLoopCommonError.privates.observeInitialEvent
+        );
 
         setTimeout(() => {
             accumulator_ResizeObserverLoopCommonError.privates.currentAccumulator = null;
 
-            if (newAcc.countEvents < 2) {
-                // We display the 1st event immediately, so the accumulated display is required starting with 2.
+            const configThreshold = accumulator_ResizeObserverLoopCommonError.privates.suppressPerPeriodThreshold;
+
+            // If we display the 1st event immediately, then total number of events that trigger display is +1:
+            const suppressionThreshold =
+                configThreshold + (accumulator_ResizeObserverLoopCommonError.privates.observeInitialEvent ? 1 : 0);
+
+            if (newAcc.countEvents <= suppressionThreshold) {
                 return;
             }
 
@@ -158,7 +168,7 @@ const accumulator_ResizeObserverLoopCommonError = {
     },
 };
 
-function createEventAccumulator(tracker: OperationsTracker) {
+function createEventAccumulator(tracker: OperationsTracker, observeInitialEvent: boolean) {
     const newAcc = {
         countEvents: 0,
 
@@ -179,8 +189,12 @@ function createEventAccumulator(tracker: OperationsTracker) {
         ) => {
             if (newAcc.countEvents === 0) {
                 newAcc.countEvents = 1;
-                newAcc.lastEvent = undefined;
-                tracker.observeEvent(kind, eventDescr, errorDescr, ...moreInfo);
+                if (observeInitialEvent) {
+                    newAcc.lastEvent = undefined;
+                    tracker.observeEvent(kind, eventDescr, errorDescr, ...moreInfo);
+                } else {
+                    newAcc.lastEvent = { kind, eventDescr, errorDescr, moreInfo };
+                }
             } else {
                 newAcc.countEvents++;
                 newAcc.lastEvent = { kind, eventDescr, errorDescr, moreInfo };

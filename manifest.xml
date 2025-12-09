@@ -11,7 +11,7 @@
     <DefaultLocale>en-US</DefaultLocale>
     <DefaultSettings>
       <SourceLocation DefaultValue="http://localhost:9000/index.html"/>
-      <RequestedWidth>450</RequestedWidth>
+      <RequestedWidth>500</RequestedWidth>
     </DefaultSettings>
     <DisplayName DefaultValue="ExpLens Excel-AddIn"/>
     <Description DefaultValue="Advanced analysis of personal finances (multiple dimensions). Automatically import up to 2 years of bank transactions (via the Lunch Money app)."/>
