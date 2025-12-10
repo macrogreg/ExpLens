@@ -2,7 +2,7 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
 
 import { defineConfig } from "#q-app/wrappers";
-import { isNullOrWhitespace } from "src/util/string_util";
+import { isNullOrWhitespace } from "./src/util/string_util";
 import packageSpec from "./package.json";
 
 // import checker from "vite-plugin-checker";
