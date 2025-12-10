@@ -54,9 +54,6 @@ jobs:
             - name: Check formatting
               run: npm run format-check
 
-            - name: Build project
-              run: npm run build
-
             - name: Install jq
               run: sudo apt-get update && sudo apt-get install -y jq
 
@@ -68,6 +65,21 @@ jobs:
               run: |
                   echo "Version: '${{ steps.version.outputs.version }}'"
 
+            - name: Build project for Current Dir
+              run: npm run build --qPublicBasePath=app/current/excel
+
+            - name: Release to current dir
+              run: |
+                  # Update current
+                  rm -rf "docs/app/current/excel"
+                  mkdir -p "docs/app/current/excel"
+                  cp -r dist/spa/* "docs/app/current/excel/"
+
+            - name: Build project for Version Dir
+              run: |
+                  VERSION=${{ steps.version.outputs.version }}
+                  npm run build --qPublicBasePath=app/$VERSION/excel
+
             - name: Release to version dir
               run: |
                   VERSION=${{ steps.version.outputs.version }}
@@ -78,13 +90,6 @@ jobs:
                   mkdir -p "docs/app/$VERSION/excel"
                   # Copy dist/spa to docs/app/version/excel
                   cp -r dist/spa/* "docs/app/$VERSION/excel/"
-
-            - name: Release to current dir
-              run: |
-                  # Update current
-                  rm -rf "docs/app/current/excel"
-                  mkdir -p "docs/app/current/excel"
-                  cp -r dist/spa/* "docs/app/current/excel/"
 
             - name: Commit and push changes
               env:

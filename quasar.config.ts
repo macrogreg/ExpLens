@@ -2,14 +2,37 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
 
 import { defineConfig } from "#q-app/wrappers";
+import { isNullOrWhitespace } from "src/util/string_util";
 import packageSpec from "./package.json";
 
 // import checker from "vite-plugin-checker";
 // import vueDevTools from "vite-plugin-vue-devtools";
 
-const FLAG_ENABLE_VUE_DEV_TOOLS: boolean = false;
+const FLAG_ENABLE_VUE_DEV_TOOLS: boolean = false as const;
 
-const PUBLIC_BASE_PATH: string = "/";
+function resolvePublicBasePath(): string {
+    let p = process.env.Q_PUBLIC_BASE_PATH;
+
+    if (isNullOrWhitespace(p)) {
+        // npm exposes `npm_config_*` env vars for `npm run build -- --publicPath=/foo`
+        p = process.env.npm_config_qpublicbasepath;
+    }
+
+    if (isNullOrWhitespace(p)) {
+        p = "/";
+    }
+
+    // Ensure we always have a leading slash for Vite's base path resolution
+    p = p && p.startsWith("/") ? p : `/${p}`;
+
+    if (p !== "/") {
+        console.log(`Q_PUBLIC_BASE_PATH is '${p}'`);
+    }
+
+    return p;
+}
+
+const Q_PUBLIC_BASE_PATH: string = resolvePublicBasePath();
 
 export default defineConfig((ctx) => {
     console.log("\nquasar.config.ts: defineConfig(..): QuasarContext >>", ctx, "<< QuasarContext");
@@ -70,7 +93,7 @@ export default defineConfig((ctx) => {
 
             // rebuildCache: true, // rebuilds Vite/linter/etc cache on startup
 
-            publicPath: PUBLIC_BASE_PATH,
+            publicPath: Q_PUBLIC_BASE_PATH,
             // analyze: true,
             env: {
                 PACKAGE_NAME: packageSpec.name,
@@ -201,7 +224,7 @@ export default defineConfig((ctx) => {
             // manifestFilename: 'manifest.json',
             extendManifestJson(json: unknown) {
                 (json as Record<string, string>).short_name = packageSpec.productName;
-                (json as Record<string, string>).start_url = PUBLIC_BASE_PATH;
+                (json as Record<string, string>).start_url = Q_PUBLIC_BASE_PATH;
             },
             // useCredentialsForManifestTag: true,
             // injectPwaMetaTags: false,
