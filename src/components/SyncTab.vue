@@ -78,7 +78,7 @@
             <div class="q-mb-sm">
                 <div class="text-primary text-weight-bold q-mb-xs" style="font-size: 0.7rem">Quick select:</div>
                 <q-btn
-                    color="primary" outline no-wrap no-caps dense label="Since Last Sync" class="q-mr-xs"
+                    color="primary" outline no-wrap no-caps dense label="Since Last Sync" style="font-size: 0.8rem" class="q-mr-xs"
                     :disable="isDataOperationInProgress || downloadDatesQuickSelectOptions.lastSync === null"
                     @click="applyDownloadDatesQuickSelect(downloadDatesQuickSelectOptions.lastSync)">
                     <q-tooltip v-if="downloadDatesQuickSelectOptions.lastSync"
@@ -91,7 +91,7 @@
                 </q-btn>
 
                 <q-btn
-                    color="primary" outline no-wrap no-caps dense label="Recent" class="q-mr-xs"
+                    color="primary" outline no-wrap no-caps dense label="Recent" style="font-size: 0.8rem" class="q-mr-xs"
                     :disable="isDataOperationInProgress || downloadDatesQuickSelectOptions.recent === null"
                     @click="applyDownloadDatesQuickSelect(downloadDatesQuickSelectOptions.recent)">
                     <q-tooltip v-if="downloadDatesQuickSelectOptions.recent"
@@ -103,7 +103,7 @@
                     </q-tooltip>
                 </q-btn>
                 <q-btn
-                    color="primary" outline no-wrap no-caps dense label="Last 24 months"
+                    color="primary" outline no-wrap no-caps dense label="Last 24 months" style="font-size: 0.8rem"
                     :disable="isDataOperationInProgress || downloadDatesQuickSelectOptions.last24Months === null"
                     @click="applyDownloadDatesQuickSelect(downloadDatesQuickSelectOptions.last24Months)">
                     <q-tooltip v-if="downloadDatesQuickSelectOptions.last24Months"
@@ -116,8 +116,8 @@
                 </q-btn>
             </div>
 
-            <div class="date-inputs" style="display: flex; gap: 16px">
-                <div style="max-width: 220px; width: 100%">
+            <div class="date-inputs" style="display: flex; gap: 5px">
+                <div style="max-width: 120px; width: 100%">
                     <q-input
                         :disable="isDataOperationInProgress"
                         filled
@@ -127,12 +127,13 @@
                         :error="!!downloadStartDateError"
                         :rules="[syncDateAgeRule]"
                         @update:model-value="downloadStartDateError = ''"
+                        style="font-size: 0.75rem"
                     />
                     <div v-if="downloadStartDateError" class="text-negative q-mt-xs">
                         {{ downloadStartDateError }}
                     </div>
                 </div>
-                <div style="max-width: 220px; width: 100%">
+                <div style="max-width: 120px; width: 100%">
                     <q-input
                         :disable="isDataOperationInProgress"
                         filled
@@ -142,6 +143,7 @@
                         :error="!!downloadEndDateError"
                         :rules="[syncDateAgeRule]"
                         @update:model-value="downloadStartDateError = ''"
+                        style="font-size: 0.75rem"
                     />
                     <div v-if="downloadEndDateError" class="text-negative q-mt-xs">{{ downloadEndDateError }}</div>
                 </div>
@@ -159,8 +161,18 @@
                 no-caps
                 dense
                 :options="[
-                    { value: true, label: 'Overwrite Existing', icon: 'note_alt' },
-                    { value: false, label: 'Download New Only', icon: 'note_add' },
+                    {
+                        value: true,
+                        label: 'Overwrite Existing',
+                        icon: 'note_alt',
+                        attrs: { style: 'font-size: 0.7rem' },
+                    },
+                    {
+                        value: false,
+                        label: 'Download New Only',
+                        icon: 'note_add',
+                        attrs: { style: 'font-size: 0.7rem' },
+                    },
                 ]"
             >
             </q-btn-toggle>

@@ -1,6 +1,6 @@
 {
     "name": "exp-lens-excel-addin",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "ExpLens Excel-AddIn",
     "productName": "ExpLens Excel-AddIn",
     "author": "macrogreg <macrogreg@users.noreply.github.com>",
@@ -13,6 +13,7 @@
         "format-check": "prettier --check \"**/*.{js,ts,vue,scss,html,md,json}\"",
         "test": "echo \"No test specified\" && exit 0",
         "dev": "quasar dev",
+        "dev-current": "npm run dev --qPublicBasePath=app/current/excel",
         "build": "quasar build",
         "postinstall": "quasar prepare",
         "licenses:generate": "license-checker-rseidelsohn --production --markdown --out license/THIRD-PARTY-LICENSES.md",
@@ -22,9 +23,9 @@
         "office-prettier": "office-addin-lint prettier",
         "office-signin": "office-addin-dev-settings m365-account login",
         "office-signout": "office-addin-dev-settings m365-account logout",
-        "office-start": "office-addin-debugging start manifest.xml",
-        "office-stop": "office-addin-debugging stop manifest.xml",
-        "office-validate": "office-addin-manifest validate manifest.xml"
+        "office-start": "office-addin-debugging start ExpLens.Excel-AddIn.Manifest.Local.xml",
+        "office-stop": "office-addin-debugging stop ExpLens.Excel-AddIn.Manifest.Local.xml",
+        "office-validate": "office-addin-manifest validate ExpLens.Excel-AddIn.Manifest.Local.xml"
     },
     "dependencies": {
         "@quasar/extras": "^1.16.4",

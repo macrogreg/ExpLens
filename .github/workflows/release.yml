@@ -75,12 +75,42 @@ jobs:
                   mkdir -p "docs/app/current/excel"
                   cp -r dist/spa/* "docs/app/current/excel/"
 
+            - name: Prepare Manifest for the Current dir
+              continue-on-error: true
+              run: |
+                  # Copy manifest file
+                  if [ ! -f "ExpLens.Excel-AddIn.Manifest.Local.xml" ]; then
+                    echo "Error: Source manifest file not found: ExpLens.Excel-AddIn.Manifest.Local.xml"
+                    exit 1
+                  fi
+                                    
+                  cp "ExpLens.Excel-AddIn.Manifest.Local.xml" "docs/app/current/excel/ExpLens.Excel-AddIn.Manifest.xml"
+
+                  if [ ! -f "docs/app/current/excel/ExpLens.Excel-AddIn.Manifest.xml" ]; then
+                    echo "Error: Failed to copy manifest file to 'docs/app/current/excel/ExpLens.Excel-AddIn.Manifest.xml'"
+                    exit 1
+                  fi
+
+                  # Replace localhost URL with production URL
+                  sed -i 's|http://localhost:9000|https://explens.app|g' "docs/app/current/excel/ExpLens.Excel-AddIn.Manifest.xml"
+
+                  echo "Manifest for 'current' deployment prepared successfully"
+
+            - name: Upload Manifest Artifact for the Current dir
+              continue-on-error: true
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ExpLens.Excel-AddIn.Manifest.xml
+                  path: docs/app/current/excel/ExpLens.Excel-AddIn.Manifest.xml
+                  retention-days: 90
+                  compression-level: 0
+
             - name: Build project for Version Dir
               run: |
                   VERSION=${{ steps.version.outputs.version }}
                   npm run build --qPublicBasePath=app/$VERSION/excel
 
-            - name: Release to version dir
+            - name: Release to Version dir
               run: |
                   VERSION=${{ steps.version.outputs.version }}
                   # Create version directory
@@ -90,6 +120,40 @@ jobs:
                   mkdir -p "docs/app/$VERSION/excel"
                   # Copy dist/spa to docs/app/version/excel
                   cp -r dist/spa/* "docs/app/$VERSION/excel/"
+
+            - name: Prepare Manifest for the Version dir
+              continue-on-error: true
+              run: |
+                  VERSION=${{ steps.version.outputs.version }}
+                  # Copy manifest file
+                  if [ ! -f "ExpLens.Excel-AddIn.Manifest.Local.xml" ]; then
+                    echo "Error: Source manifest file not found: ExpLens.Excel-AddIn.Manifest.Local.xml"
+                    exit 1
+                  fi
+                                    
+                  cp "ExpLens.Excel-AddIn.Manifest.Local.xml" "docs/app/$VERSION/excel/ExpLens.Excel-AddIn.Manifest.v_$VERSION.xml"
+
+                  if [ ! -f "docs/app/$VERSION/excel/ExpLens.Excel-AddIn.Manifest.v_$VERSION.xml" ]; then
+                    echo "Error: Failed to copy manifest file to 'docs/app/$VERSION/excel/ExpLens.Excel-AddIn.Manifest.v_$VERSION.xml'"
+                    exit 1
+                  fi
+
+                  # Replace localhost URL with production URL
+                  sed -i 's|http://localhost:9000|https://explens.app|g' "docs/app/$VERSION/excel/ExpLens.Excel-AddIn.Manifest.v_$VERSION.xml"
+
+                  # Replace 'current' path with version-specific path
+                  sed -i "s|app/current/|app/$VERSION/|g" "docs/app/$VERSION/excel/ExpLens.Excel-AddIn.Manifest.v_$VERSION.xml"
+
+                  echo "Manifest for 'version' deployment ($VERSION) prepared successfully"
+
+            - name: Upload Manifest Artifact for the Version dir
+              continue-on-error: true
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ExpLens.Excel-AddIn.Manifest.v_${{steps.version.outputs.version}}.xml
+                  path: docs/app/${{steps.version.outputs.version}}/excel/ExpLens.Excel-AddIn.Manifest.v_${{steps.version.outputs.version}}.xml
+                  retention-days: 90
+                  compression-level: 0
 
             - name: Commit and push changes
               env:

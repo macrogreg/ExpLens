@@ -79,13 +79,13 @@ quasar build
 # Office-specific commands
 npm run office-start      # Start debugging in Excel
 npm run office-stop       # Stop debugging session
-npm run office-validate   # Validate manifest.xml
+npm run office-validate   # Validate `ExpLens.Excel-AddIn.Manifest.Local.xml`
 ```
 
 ### Environment & Configuration
 
 - Quasar config in `quasar.config.ts` with custom build env vars from `package.json` (version, name, etc.)
-- Dev server runs on `http://localhost:9000` (referenced in `manifest.xml`)
+- Dev server runs on `http://localhost:9000` (referenced in `ExpLens.Excel-AddIn.Manifest.Local.xml`)
 - Vue Router uses **hash mode** to avoid Office.js history issues
 - TypeScript with strict mode enabled
 
