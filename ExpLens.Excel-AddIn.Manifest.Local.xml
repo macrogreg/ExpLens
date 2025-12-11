@@ -18,6 +18,8 @@
         <AppDomain>https://explens.app</AppDomain>
         <AppDomain>https://lunchmoney.app</AppDomain>
         <AppDomain>https://github.com</AppDomain>
+        <AppDomain>https://us.i.posthog.com</AppDomain>
+        <AppDomain>https://posthog.com</AppDomain>
     </AppDomains>
     <Hosts>
         <Host Name="Workbook"/>
