@@ -290,6 +290,7 @@ import { useOpTracker } from "src/status-tracker/composables/status-log";
 import { validateApiToken } from "src/business/validate-api-token";
 import { isNullOrWhitespace } from "src/util/string_util";
 import { notifyPositive, notifyWarning } from "src/composables/notify";
+import { usePostHog } from "src/composables/usePostHog";
 
 const officeApiInitErrorMsg = ref<string>("");
 const officeApiEnvInfo = ref<null | { host: Office.HostType; platform: Office.PlatformType }>(null);
@@ -428,9 +429,13 @@ function reinitDownloadDatesQuickSelectOptions() {
     const now = new Date();
     const nowStr = formatDateLocal(now);
 
-    const lastSyncDate = appSettings.lastCompletedSyncUtc.value;
-    downloadDatesQuickSelectOptions.lastSync =
-        lastSyncDate === null ? null : { start: formatDateLocal(lastSyncDate), end: nowStr };
+    try {
+        const lastSyncDate = appSettings.lastCompletedSyncUtc.value;
+        downloadDatesQuickSelectOptions.lastSync =
+            lastSyncDate === null ? null : { start: formatDateLocal(lastSyncDate), end: nowStr };
+    } catch {
+        // We might have called this before settings were available
+    }
 
     downloadDatesQuickSelectOptions.recent = { start: getRecentSyncStartDate(now), end: nowStr };
 
@@ -441,6 +446,17 @@ function applyDownloadDatesQuickSelect(applyRange: { start: string; end: string 
     if (applyRange === null) {
         return;
     }
+
+    usePostHog().capture("applyDownloadDatesQuickSelect", {
+        applyRange:
+            applyRange === downloadDatesQuickSelectOptions.lastSync
+                ? "lastSync"
+                : applyRange === downloadDatesQuickSelectOptions.recent
+                  ? "recent"
+                  : applyRange === downloadDatesQuickSelectOptions.last24Months
+                    ? "last24Months"
+                    : "unknownOption",
+    });
 
     downloadStartDate.value = applyRange.start;
     downloadEndDate.value = applyRange.end;
@@ -466,6 +482,8 @@ const downloadStartDateError = ref("");
 const downloadEndDateError = ref("");
 
 async function validateAndDownload() {
+    usePostHog().capture("validateAndDownload", { step: 1 });
+
     // Date validation:
     downloadStartDateError.value = "";
     downloadEndDateError.value = "";
@@ -520,6 +538,8 @@ async function validateAndDownload() {
     const updateExistingTransactions = downloadUpdateExistingTransactions.value;
 
     // Execute the download:
+    usePostHog().capture("validateAndDownload", { step: 2 });
+
     try {
         syncOperationProgressPercentage.value = 0;
         try {
@@ -528,6 +548,7 @@ async function validateAndDownload() {
 
             // Update dates quick-select:
             reinitDownloadDatesQuickSelectOptions();
+            usePostHog().capture("validateAndDownload", { step: 3 });
         } catch (err) {
             notifyWarning("Error while downloading data! (see status log for details)", errorTypeMessageString(err));
         }

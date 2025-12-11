@@ -1,6 +1,6 @@
 {
     "name": "exp-lens-excel-addin",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "description": "ExpLens Excel-AddIn",
     "productName": "ExpLens Excel-AddIn",
     "author": "macrogreg <macrogreg@users.noreply.github.com>",
@@ -38,6 +38,7 @@
         "office-addin-manifest": "^2.1.2",
         "office-addin-prettier-config": "^2.0.1",
         "office-js": "^0.1.0",
+        "posthog-js": "^1.304.0",
         "quasar": "^2.16.0",
         "vue": "^3.5.22",
         "vue-router": "^4.0.12"
