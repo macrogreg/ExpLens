@@ -3,8 +3,8 @@
         <div class="main-content q-pa-md">
             <div class="title-bar">
                 <h1 class="title-name">ExpLens</h1>
-                <div class="title-version">{{ AddInAppVersion }}</div>
-                <img src="/icons/favicon-32x32.png" alt="Logo" class="title-logo" />
+                <div class="title-version">{{ packageVersion }}</div>
+                <img src="icons/favicon-32x32.png" alt="Logo" class="title-logo" />
             </div>
 
             <q-tabs v-model="activeTab" inline-label align="center" class="q-mb-md" indicator-color="tab-bar-active">
@@ -117,15 +117,27 @@
 </style>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-
 console.debug("ExpLens Excel-AddIn: Loading IndexPage...");
 
-onMounted(async () => {});
+import { ref, onMounted } from "vue";
 import SyncTab from "components/SyncTab.vue";
 import AnalyzeTab from "components/AnalyzeTab.vue";
 import SettingsTab from "components/SettingsTab.vue";
-import { AddInAppVersion } from "src/composables/app-version";
+
+function getAppPackageVersion(): string {
+    let packageVersion = process.env.PACKAGE_VERSION ?? "_unspecified_";
+
+    const semVerZeroSuffix = ".0.0" as const;
+    if (packageVersion.endsWith(semVerZeroSuffix)) {
+        packageVersion = packageVersion.slice(0, packageVersion.length - semVerZeroSuffix.length);
+    }
+
+    return packageVersion;
+}
+
+const packageVersion = getAppPackageVersion();
 
 const activeTab = ref("sync");
+
+onMounted(async () => {});
 </script>
