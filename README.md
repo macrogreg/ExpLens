@@ -1,19 +1,21 @@
 # ExpLens Excel-AddIn
 
-ExpLens Excel-AddIn
-
 ## Licenses
 
 ### Intent
 
-This project enables people to work with their financial data freely and effectively, without restrictions.
-However, to protect the effort invested in building and maintaining it, commercial/competitive use is restricted.
+ExpLens enables you to work with financial data freely and without restrictions, privately or commercially. You can use ExpLense free of charge for your family, your organization, or _as a tool_ in services you offer.
 
-**Interested in commercial use?  
+However, to protect our investment in building and maintaining ExpLense, we restrict using it for _competitive_ or _alternative_ offerings to our core mission:  
+  » Tools for financial data analysis  
+  » Synchronization of financial data
+
+**Interested in collaborating on a similar offering?  
 Reach out! We'll work out reasonable terms.**
 
 ### Summary
 
+The above the intent of our licensing strategy.
 See [LICENSE.md](./LICENSE.md) for complete terms.
 
 - **Generic libraries** (explicitly listed): MIT License
@@ -54,8 +56,7 @@ port 9000. If you need to use another port, make sure to modify the manifest acc
 
 #### Activate the Excel Add-In
 
-The _release_ version of ExpLens works on Excel Web and Excel Desktop (Windows & Mac).
-
+The _release_ version of ExpLens works on Excel Web and Excel Desktop (Windows & Mac).  
 The instructions here are for the _dev_ version (Windows desktop).
 
 ##### Option 1: "Admin Style" (easer to uninstall)

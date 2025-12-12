@@ -2,6 +2,9 @@
 .thumbs.db
 node_modules
 
+#Local manifest files:
+manifest-cache
+
 # Quasar core related directories
 .quasar
 /dist
